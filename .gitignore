@@ -4,3 +4,14 @@ Payload/
 ChordAtlas.xcodeproj/
 xcodebuild.log
 .DS_Store
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.apk
+# never commit signing keys
+*.jks
+*.keystore
+ANDROID-SIGNING-SECRETS.txt

@@ -6,10 +6,22 @@
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
 
   /* ================= storage & native bridge ================= */
-  function native(type, payload) { try { window.webkit.messageHandlers.native.postMessage(Object.assign({ type: type }, payload || {})); return true; } catch (e) { return false; } }
+  var IS_ANDROID = !!window.AndroidBridge;
+  // Native bridge: iOS (WKWebView message handler) or Android (addJavascriptInterface)
+  function native(type, payload) {
+    var msg = Object.assign({ type: type }, payload || {});
+    try { if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.native) { window.webkit.messageHandlers.native.postMessage(msg); return true; } } catch (e) {}
+    try { if (IS_ANDROID) { window.AndroidBridge.postMessage(JSON.stringify(msg)); return true; } } catch (e) {}
+    return false;
+  }
   var Store = (function () {
     var data = {};
-    try { data = window.__NATIVE_STORE__ && typeof window.__NATIVE_STORE__ === 'object' ? window.__NATIVE_STORE__ : JSON.parse(localStorage.getItem('chordatlas') || '{}') || {}; } catch (e) { data = {}; }
+    try {
+      if (IS_ANDROID && window.AndroidBridge.getStore) data = JSON.parse(window.AndroidBridge.getStore() || '{}') || {};
+      else if (window.__NATIVE_STORE__ && typeof window.__NATIVE_STORE__ === 'object') data = window.__NATIVE_STORE__;
+      else data = JSON.parse(localStorage.getItem('chordatlas') || '{}') || {};
+      if (typeof data !== 'object' || Array.isArray(data)) data = {};
+    } catch (e) { data = {}; }
     var t = null;
     function save() {
       clearTimeout(t);
@@ -25,6 +37,17 @@
     Snd.set('instrument', setting('instrument')); Snd.set('pattern', setting('pattern')); Snd.set('volume', setting('volume'));
     var th = setting('theme'); document.documentElement.setAttribute('data-theme', th === 'system' ? '' : th);
     if (th === 'system') document.documentElement.removeAttribute('data-theme');
+    sendTheme();
+  }
+  // Tell the native shell whether the page is dark, so it can colour the status-bar icons
+  function sendTheme() {
+    var th = setting('theme');
+    var dark = th === 'dark' || (th === 'system' && !!window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    native('theme', { dark: dark });
+  }
+  function setInsets(top, bottom) {
+    var s = document.documentElement.style;
+    s.setProperty('--sat', Math.max(0, +top || 0) + 'px'); s.setProperty('--sab', Math.max(0, +bottom || 0) + 'px');
   }
   function haptic(style) { if (setting('haptics')) native('haptic', { style: style || 'light' }); }
 
@@ -645,7 +668,7 @@
     var sx = 0, sy = 0, edge = false, sheetDrag = false, sheetY = 0;
     document.addEventListener('touchstart', function (e) {
       var t = e.touches[0]; sx = t.clientX; sy = t.clientY;
-      edge = sx < 22 && !document.body.classList.contains('sheet-open') && !!$('.page .back');
+      edge = !IS_ANDROID && sx < 22 && !document.body.classList.contains('sheet-open') && !!$('.page .back'); // Android has its own back gesture
       sheetDrag = !!e.target.closest('#sheet .grab, #sheet .sh-top');
     }, { passive: true });
     document.addEventListener('touchmove', function (e) {
@@ -659,7 +682,19 @@
       if (sheetDrag) { $('#sheet').style.transform = ''; if (sheetY > 90) closeSheet(); sheetY = 0; }
       edge = false; sheetDrag = false;
     });
+    document.addEventListener('touchcancel', function () {
+      var p = $('.page'); if (p) p.style.transform = '';
+      $('#sheet').style.transform = ''; edge = false; sheetDrag = false; sheetY = 0;
+    });
   })();
+
+  // Android back button / gesture: close the sheet, go back a page, then go Home; false lets Android leave the app
+  function androidBack() {
+    if (document.body.classList.contains('sheet-open')) { closeSheet(); return true; }
+    if (routeHist.length > 1) { history.back(); return true; }
+    if (route().name !== 'home') { go('home'); return true; }
+    return false;
+  }
 
   /* ================= boot ================= */
   function boot() {
@@ -667,11 +702,13 @@
     $('#tabbar').innerHTML = TABS.map(function (t) { return '<button data-act="nav" data-to="' + t[0] + '" data-tab="' + t[0] + '"><svg viewBox="0 0 24 24"><path d="' + t[2] + '"/></svg><span>' + t[1] + '</span></button>'; }).join('');
     $('#sheet-backdrop').addEventListener('click', closeSheet);
     $('#mp-stop').addEventListener('click', function () { Snd.stop(); });
-    if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener && window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { });
+    var mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq && mq.addEventListener) mq.addEventListener('change', sendTheme);
+    if (IS_ANDROID && window.AndroidBridge.getInsets) { try { var ins = JSON.parse(window.AndroidBridge.getInsets()); setInsets(ins.top, ins.bottom); } catch (e) {} }
     routeHist = [route().full];
     render('none');
     document.addEventListener('touchstart', function unlock() { Snd.unlock(); document.removeEventListener('touchstart', unlock); }, { passive: true });
   }
-  window.ChordAtlasApp = { go: go, Store: Store };
+  window.ChordAtlasApp = { go: go, Store: Store, androidBack: androidBack, setInsets: setInsets };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

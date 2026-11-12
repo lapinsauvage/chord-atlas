@@ -1,8 +1,8 @@
-# Chord Atlas — iPhone app
+# Chord Atlas — iPhone & Android app
 
 A guitar chord companion that works fully offline: pick any chord and see what goes well with it, get progressions from any set of chords (even random ones) with playable options and their feeling explained, and browse famous progressions, keys and theory.
 
-**To get it on your iPhone, follow [GITHUB-SETUP.md](GITHUB-SETUP.md).**
+**Download:** the latest `ChordAtlas.apk` (Android) and `ChordAtlas.ipa` (iPhone) are under [Releases](https://github.com/lapinsauvage/chord-atlas/releases). Installation steps: [GITHUB-SETUP.md](GITHUB-SETUP.md).
 
 ## What's inside the app
 
@@ -22,17 +22,21 @@ A guitar chord companion that works fully offline: pick any chord and see what g
 ## Project layout
 
 ```text
-App/web/            the app itself (HTML/CSS/JS, runs offline inside the iOS shell)
+App/web/            the app itself (HTML/CSS/JS, runs offline inside both native shells)
   chord-engine.js   music-theory engine (fixed version of the uploaded engine)
   generator.js      progression creator + mood analysis
   content.js        all explanatory text
   audio.js          synthesiser and sequencer
   app.js            screens and navigation
-App/Sources/        Swift shell (WKWebView + native storage, haptics, audio session)
-App/Assets.xcassets app icon and launch colour
+App/Sources/        iOS shell in Swift (WKWebView + native storage, haptics, audio session)
+App/Assets.xcassets iOS app icon and launch colour
 project.yml         XcodeGen spec (the GitHub workflow generates the Xcode project from it)
-.github/workflows/  GitHub Actions workflow that builds ChordAtlas.ipa
+android/            Android shell in Kotlin (WebView + storage, haptics, back button, edge-to-edge),
+                    Gradle build; App/web is copied into the APK at build time
+.github/workflows/  build.yml: builds ChordAtlas.ipa (macOS) and ChordAtlas.apk (Linux), publishes a release
 docs/               CHORD-RULES.md (rules + list of engine fixes) and the regenerated chords.json
 ```
 
 You can also open `App/web/index.html` in a desktop browser to try the app.
+
+The same web files run on both platforms; only the thin native shells differ. The JavaScript bridge (`native()` in `app.js`) talks to `window.webkit.messageHandlers.native` on iOS and `window.AndroidBridge` on Android.

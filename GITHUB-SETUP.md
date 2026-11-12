@@ -1,62 +1,81 @@
-# From this folder to the app on your iPhone
+# From this repository to the app on your phone
 
-Building an iPhone app needs Apple's Mac tools. GitHub lends you a Mac in the cloud for free ("GitHub Actions"). The workflow in `.github/workflows/build-ipa.yml` builds **ChordAtlas.ipa** there automatically. Then you install it on your phone with a free tool.
+GitHub builds both apps for free with "GitHub Actions" (`.github/workflows/build.yml`):
 
-You need: a free GitHub account, a free Apple ID, a computer (Windows or Mac), and a USB cable for the first install.
+- **iPhone:** `ChordAtlas.ipa`, built on a Mac that GitHub lends out. Installed with a free sideloading tool.
+- **Android:** `ChordAtlas.apk`, built on a Linux machine. Installed by tapping it on the phone.
+
+Every change pushed to `main` builds both and publishes them together under **Releases**.
 
 ---
 
-## Part 1 — Put the project on GitHub (once, ~5 minutes)
+## Part 1 — The repository (already done for `lapinsauvage/chord-atlas`)
 
-1. Go to **github.com** and sign up or log in.
-2. Top right **+** → **New repository**.
-   - Name: `chord-atlas`
-   - Choose **Public** (unlimited free Mac build minutes) or **Private** (free, but limited to roughly 25 builds a month).
-   - Leave "Add a README" **unticked**. Click **Create repository**.
-3. Upload the files. Pick **one** way:
+1. On **github.com**: top right **+** → **New repository**, name it `chord-atlas`, leave "Add a README" unticked, and click **Create repository**.
+   **Public** gives unlimited free build minutes. **Private** is free too, but limited to roughly 25 iPhone builds a month.
+2. Upload the project. Either let Claude push it, or use **Add file → Upload files** in the browser.
+   The hidden `.github` folder is often skipped by drag-and-drop. If so, create `.github/workflows/build.yml` with **Add file → Create new file** and paste the file's contents.
 
-   **A. Let Claude push it (easiest).** Tell Claude the repository name (for example `yourname/chord-atlas`). Claude connects to it and uploads everything.
+## Part 2 — Add the Android signing key (once, ~2 minutes)
 
-   **B. Upload in the browser.**
-   1. Unzip `ChordAtlas.zip` on your computer.
-   2. On the empty repository page click **uploading an existing file**.
-   3. Open the unzipped `ChordAtlas` folder and drag **everything inside it** (`App`, `docs`, `project.yml`, the `.md` files) onto the page. Click **Commit changes**.
-   4. The hidden folder `.github` is usually skipped by drag-and-drop, so create the workflow by hand: **Add file → Create new file**, type the name `.github/workflows/build-ipa.yml` (the slashes create the folders), paste the full contents of that file from the zip (open it in any text editor), and click **Commit changes**.
-      - Can't see `.github`? On a Mac press **Cmd + Shift + .** in Finder. On Windows: File Explorer → View → Show → Hidden items.
+Android only installs a new version over an old one when both are signed with the same key. Your key is in the file **`ANDROID-SIGNING-SECRETS.txt`**, which Claude gave you separately. It is never stored in the repository.
 
-## Part 2 — Let GitHub build the IPA (~5–8 minutes, automatic)
+1. Open **https://github.com/lapinsauvage/chord-atlas/settings/secrets/actions** (Settings → Secrets and variables → Actions).
+2. Click **New repository secret**. Name: `ANDROID_KEYSTORE_PASSWORD`. Secret: the password from the file. Click **Add secret**.
+3. Click **New repository secret** again. Name: `ANDROID_KEYSTORE_BASE64`. Secret: the long single line from the file, all of it. Click **Add secret**.
+4. Keep `ANDROID-SIGNING-SECRETS.txt` somewhere safe, for example in a password manager. If it is lost, a future version needs an uninstall first, which erases saved progressions.
 
-1. In your repository click the **Actions** tab. If GitHub asks, click **I understand my workflows, go ahead and enable them**.
-2. A run called **Build iOS app (IPA)** starts by itself after each upload or change. To start one manually: click the workflow name on the left → **Run workflow** → **Run workflow**.
-3. Wait for the green ✓. (A red ✗ means the build failed: open the run, download the **xcodebuild-log** artifact at the bottom, and send it to Claude.)
-4. Download the app: on the repository's main page, look right for **Releases** → **Chord Atlas build N** → click **ChordAtlas.ipa**.
-   (It is also under the run's **Artifacts** as a zip containing the same file.)
+Without these secrets the Android build still works, but it is signed with a temporary key. GitHub then shows a yellow warning on the run.
 
-## Part 3 — Install on your iPhone
+## Part 3 — Let GitHub build (automatic)
 
-iPhones only install apps that are signed. The IPA from GitHub is unsigned on purpose; a sideloading tool signs it with your own Apple ID.
+1. Open the **Actions** tab. If GitHub asks, click **I understand my workflows, go ahead and enable them**.
+2. The run **Build apps (iOS + Android)** starts after every change. To start one by hand: click it on the left → **Run workflow** → **Run workflow**.
+   - Android takes about 3–5 minutes.
+   - iPhone takes about 5–10 minutes, plus any wait for a free Mac.
+3. When it is done, the repository's main page shows **Releases** on the right → **Chord Atlas build N**, with `ChordAtlas.apk` and `ChordAtlas.ipa`.
+   If one of the two builds fails, the other is still published. The error is shown at the top of the failed run.
 
-### Option 1: Sideloadly (Windows or Mac) — recommended
+---
+
+## Part 4a — Install on Android
+
+1. On the phone, open the **Releases** page in Chrome and tap **ChordAtlas.apk** to download it.
+2. Open it, from the download notification or from **Files → Downloads**.
+3. The first time, Android asks to allow installs from this source (Chrome or Files): tap **Settings → Allow from this source**, then go back.
+4. Tap **Install**. If Google Play Protect warns that it doesn't recognise the app (normal for apps not from the Play Store), tap **More details → Install anyway**.
+5. Open **Chord Atlas**.
+
+**Updating:** install the newer APK the same way. It replaces the old version and keeps your saved data, as long as both were signed with your key from Part 2.
+There is no time limit on Android.
+
+## Part 4b — Install on iPhone
+
+iPhones only install signed apps. The IPA from GitHub is unsigned on purpose; a sideloading tool signs it with your own Apple ID.
+
+### Option 1: Sideloadly (Windows or Mac), recommended
 1. Install **Sideloadly** from **sideloadly.io**. On Windows also install **iTunes** and **iCloud** from apple.com (the non-Microsoft-Store versions, as Sideloadly's site explains).
 2. Connect your iPhone with a cable, unlock it and tap **Trust** if asked.
-3. Open Sideloadly, drag **ChordAtlas.ipa** into it, enter your Apple ID e-mail, click **Start**, and enter your Apple ID password (and 2-factor code) when asked (Sideloadly states it sends these only to Apple; if you prefer, use a separate Apple ID made just for sideloading).
+3. Open Sideloadly, drag **ChordAtlas.ipa** into it, enter your Apple ID e-mail and click **Start**. Enter your Apple ID password (and 2-factor code) when asked.
+   Sideloadly states it sends these only to Apple. If you prefer, use a separate Apple ID made just for sideloading.
 4. On the iPhone:
    - **Settings → General → VPN & Device Management** → tap your Apple ID under "Developer App" → **Trust**.
    - iOS 16 or newer: **Settings → Privacy & Security → Developer Mode → On**, restart, and confirm.
 5. Open **Chord Atlas** from your home screen.
 
 ### Option 2: AltStore or SideStore
-These install IPAs from the Files app and can refresh them over Wi-Fi. Follow the setup at altstore.io or sidestore.io, then open `ChordAtlas.ipa` from Files and choose AltStore/SideStore.
+These install IPAs from the Files app and can refresh them over Wi-Fi. Follow the setup at altstore.io or sidestore.io. Then open `ChordAtlas.ipa` from Files and choose AltStore/SideStore.
 
-### The 7-day limit
-With a **free** Apple ID, Apple makes sideloaded apps stop opening after **7 days**. Your saved data stays; just re-install the same IPA with Sideloadly (or let AltStore/SideStore refresh it automatically). With a paid Apple Developer account ($99/year) the signature lasts a year.
+### The 7-day limit (iPhone only)
+With a **free** Apple ID, Apple stops sideloaded apps opening after **7 days**. Your saved data stays: re-install the same IPA with Sideloadly, or let AltStore/SideStore refresh it automatically. With a paid Apple Developer account ($99/year) the signature lasts a year.
 
 ---
 
-## Updating the app later
-Change files in the repository (or ask Claude to). Each push builds a new release, **Chord Atlas build N+1**. Install it the same way; your favourites and saved progressions are kept.
+## Updating the apps later
+Change files in the repository, or ask Claude to. Each push builds a new release, **Chord Atlas build N+1**, with both apps. Install them the same way; favourites and saved progressions are kept.
 
-## Building on a Mac instead (optional)
+## Building on your own computer (optional)
+**iPhone (Mac only):**
 ```bash
 brew install xcodegen
 ```
@@ -64,3 +83,5 @@ brew install xcodegen
 xcodegen generate && open ChordAtlas.xcodeproj
 ```
 Select your iPhone as the target, set your team under Signing & Capabilities, and press Run.
+
+**Android:** open the `android` folder in Android Studio and press Run. The web files in `App/web` are copied into the app automatically.

@@ -1,0 +1,159 @@
+name: Build apps (iOS + Android)
+
+# Runs on every push to main, and on demand from the Actions tab ("Run workflow").
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to publish the apps as a GitHub Release
+
+jobs:
+  ios:
+    name: iOS (.ipa)
+    # Intel runner: the Apple Silicon (macos-15) pool was over capacity and never picked up the job.
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Build the app (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ChordAtlas.xcodeproj \
+            -scheme ChordAtlas \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee xcodebuild.log | grep -E "error:|warning: |BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Release-iphoneos/ChordAtlas.app
+
+      - name: Package as .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/ChordAtlas.app Payload/
+          zip -qry ChordAtlas.ipa Payload
+          ls -lh ChordAtlas.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChordAtlas-ipa
+          path: ChordAtlas.ipa
+
+      - name: Report build errors
+        if: failure()
+        run: |
+          [ -f xcodebuild.log ] || exit 0
+          python3 - <<'PY'
+          lines = open('xcodebuild.log', errors='replace').read().splitlines()
+          errs = [l for l in lines if 'error:' in l][:40] or lines[-60:]
+          msg = '\n'.join(errs)[-6000:]
+          print('::error title=iOS build failed::' + msg.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
+          PY
+
+  android:
+    name: Android (.apk)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Load the signing key (from repository secrets)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "Signing with your release key."
+          else
+            echo "::warning title=No Android signing key::Secret ANDROID_KEYSTORE_BASE64 is not set, so this APK is signed with a temporary debug key. Later updates will need an uninstall first. See GITHUB-SETUP.md."
+          fi
+
+      - name: Build the APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleRelease 2>&1 | tee ../gradle.log
+
+      - name: Collect the APK
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk ChordAtlas.apk
+          ls -lh ChordAtlas.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChordAtlas-apk
+          path: ChordAtlas.apk
+
+      - name: Report build errors
+        if: failure()
+        run: |
+          [ -f gradle.log ] || exit 0
+          python3 - <<'PY'
+          lines = open('gradle.log', errors='replace').read().splitlines()
+          keep = [l for l in lines if l.startswith('e: ') or 'error:' in l or 'ERROR' in l]
+          start = next((i for i, l in enumerate(lines) if 'What went wrong' in l), None)
+          if start is not None:
+              keep += lines[start:start + 25]
+          msg = '\n'.join(keep or lines[-60:])[-6000:]
+          print('::error title=Android build failed::' + msg.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
+          PY
+
+  release:
+    name: Publish release
+    needs: [ios, android]
+    if: always() && (needs.ios.result == 'success' || needs.android.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the built apps
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ChordAtlas-*
+          merge-multiple: true
+
+      - name: List files
+        run: ls -lh
+
+      - name: Publish as a Release (direct download links)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Chord Atlas build ${{ github.run_number }}
+          body: |
+            - **ChordAtlas.apk**: Android. Download it on your phone and tap it to install.
+            - **ChordAtlas.ipa**: iPhone. Install it with Sideloadly or AltStore.
+
+            iOS build: ${{ needs.ios.result }} · Android build: ${{ needs.android.result }}
+            See GITHUB-SETUP.md for step-by-step instructions.
+          files: |
+            ChordAtlas.ipa
+            ChordAtlas.apk
+          fail_on_unmatched_files: false
