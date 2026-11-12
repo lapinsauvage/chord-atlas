@@ -145,8 +145,10 @@ jobs:
       - name: Publish as a Release (direct download links)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: Chord Atlas build ${{ github.run_number }}
+          # v1.0.N: unique per run of this workflow (older releases used build-N tags)
+          tag_name: v1.0.${{ github.run_number }}
+          name: Chord Atlas 1.0 (build ${{ github.run_number }})
+          make_latest: true
           body: |
             - **ChordAtlas.apk**: Android. Download it on your phone and tap it to install.
             - **ChordAtlas.ipa**: iPhone. Install it with Sideloadly or AltStore.

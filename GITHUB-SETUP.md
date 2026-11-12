@@ -33,14 +33,17 @@ Without these secrets the Android build still works, but it is signed with a tem
 2. The run **Build apps (iOS + Android)** starts after every change. To start one by hand: click it on the left → **Run workflow** → **Run workflow**.
    - Android takes about 3–5 minutes.
    - iPhone takes about 5–10 minutes, plus any wait for a free Mac.
-3. When it is done, the repository's main page shows **Releases** on the right → **Chord Atlas build N**, with `ChordAtlas.apk` and `ChordAtlas.ipa`.
+3. When it is done, the repository's main page shows **Releases** on the right → **Chord Atlas 1.0 (build N)**, with `ChordAtlas.apk` and `ChordAtlas.ipa`.
+   These links always download the newest version:
+   - Android: https://github.com/lapinsauvage/chord-atlas/releases/latest/download/ChordAtlas.apk
+   - iPhone: https://github.com/lapinsauvage/chord-atlas/releases/latest/download/ChordAtlas.ipa
    If one of the two builds fails, the other is still published. The error is shown at the top of the failed run.
 
 ---
 
 ## Part 4a — Install on Android
 
-1. On the phone, open the **Releases** page in Chrome and tap **ChordAtlas.apk** to download it.
+1. On the phone, open https://github.com/lapinsauvage/chord-atlas/releases/latest/download/ChordAtlas.apk in Chrome. It downloads the newest APK.
 2. Open it, from the download notification or from **Files → Downloads**.
 3. The first time, Android asks to allow installs from this source (Chrome or Files): tap **Settings → Allow from this source**, then go back.
 4. Tap **Install**. If Google Play Protect warns that it doesn't recognise the app (normal for apps not from the Play Store), tap **More details → Install anyway**.
@@ -72,7 +75,7 @@ With a **free** Apple ID, Apple stops sideloaded apps opening after **7 days**. 
 ---
 
 ## Updating the apps later
-Change files in the repository, or ask Claude to. Each push builds a new release, **Chord Atlas build N+1**, with both apps. Install them the same way; favourites and saved progressions are kept.
+Change files in the repository, or ask Claude to. Each push builds a new release, **Chord Atlas 1.0 (build N+1)**, with both apps. The "latest" links above always point to it. Install them the same way; favourites and saved progressions are kept.
 
 ## Building on your own computer (optional)
 **iPhone (Mac only):**

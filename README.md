@@ -2,7 +2,7 @@
 
 A guitar chord companion that works fully offline: pick any chord and see what goes well with it, get progressions from any set of chords (even random ones) with playable options and their feeling explained, and browse famous progressions, keys and theory.
 
-**Download:** the latest `ChordAtlas.apk` (Android) and `ChordAtlas.ipa` (iPhone) are under [Releases](https://github.com/lapinsauvage/chord-atlas/releases). Installation steps: [GITHUB-SETUP.md](GITHUB-SETUP.md).
+**Download:** the latest `ChordAtlas.apk` (Android) and `ChordAtlas.ipa` (iPhone) are under [Releases](https://github.com/lapinsauvage/chord-atlas/releases/latest). Installation steps: [GITHUB-SETUP.md](GITHUB-SETUP.md).
 
 ## What's inside the app
 
