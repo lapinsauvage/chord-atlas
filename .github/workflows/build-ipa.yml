@@ -11,7 +11,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    # Intel runner: the Apple Silicon (macos-15) pool was over capacity and never picked up the job.
+    runs-on: macos-15-intel
     timeout-minutes: 30
     steps:
       - name: Check out the code
