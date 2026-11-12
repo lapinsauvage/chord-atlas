@@ -1,0 +1,48 @@
+# XcodeGen spec — the GitHub workflow turns this into ChordAtlas.xcodeproj.
+# (On a Mac: `brew install xcodegen && xcodegen generate`, then open the project.)
+name: ChordAtlas
+options:
+  bundleIdPrefix: com.chordatlas
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+targets:
+  ChordAtlas:
+    type: application
+    platform: iOS
+    sources:
+      - path: App/Sources
+      - path: App/Assets.xcassets
+      - path: App/web
+        type: folder
+        buildPhase: resources
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Chord Atlas
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIStatusBarStyle: UIStatusBarStyleDefault
+        UIViewControllerBasedStatusBarAppearance: true
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.chordatlas.app
+        PRODUCT_NAME: ChordAtlas
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: "5.0"
+        ENABLE_BITCODE: NO
+        CODE_SIGN_STYLE: Automatic

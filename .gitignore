@@ -1,0 +1,6 @@
+build/
+Payload/
+*.ipa
+ChordAtlas.xcodeproj/
+xcodebuild.log
+.DS_Store

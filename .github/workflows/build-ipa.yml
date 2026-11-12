@@ -1,0 +1,66 @@
+name: Build iOS app (IPA)
+
+# Runs on every push to main, and on demand from the Actions tab ("Run workflow").
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to publish the IPA as a GitHub Release
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Build the app (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ChordAtlas.xcodeproj \
+            -scheme ChordAtlas \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee xcodebuild.log | grep -E "error:|warning: |BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Release-iphoneos/ChordAtlas.app
+
+      - name: Package as .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/ChordAtlas.app Payload/
+          zip -qry ChordAtlas.ipa Payload
+          ls -lh ChordAtlas.ipa
+
+      - name: Upload IPA (workflow artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChordAtlas-ipa
+          path: ChordAtlas.ipa
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+
+      - name: Publish as a Release (direct download link)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Chord Atlas build ${{ github.run_number }}
+          body: Unsigned IPA. Install it with Sideloadly or AltStore (see GITHUB-SETUP.md).
+          files: ChordAtlas.ipa
