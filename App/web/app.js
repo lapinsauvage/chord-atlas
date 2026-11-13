@@ -380,12 +380,22 @@
     return { title: 'Create', html: h };
   };
   var MODAL_CHOICES = [['off', 'Off'], ['auto', 'Auto']].concat(G.MODE_ORDER.map(function (m) { return [m, G.MODES[m].name.replace(/ \(.*\)$/, '')]; }));
+  // 'off' | 'auto' | [mode ids]  (older versions stored a single mode id as a string)
+  function modalSel() {
+    var v = Store.get('modal', 'off');
+    if (v === 'off' || v === 'auto') return v;
+    var a = (Array.isArray(v) ? v : [v]).filter(function (m) { return G.MODES[m]; });
+    return a.length ? a : 'off';
+  }
   function modalPickHTML() {
-    var cur = Store.get('modal', 'off');
-    var hint = cur === 'off' ? 'Borrow chords from a parallel mode on the same home note for extra colour.' :
-      cur === 'auto' ? 'Tries every mode and shows the three that fit your chords best.' : G.MODES[cur].short;
-    return '<div class="card modal-pick"><div class="card-h"><b>Modal colour</b>' + (cur !== 'off' ? '<span class="aside"><i class="mc"></i> on</span>' : '') + '</div>' +
-      '<div class="hscroll">' + MODAL_CHOICES.map(function (m) { return '<button class="root sm' + (cur === m[0] ? ' on' : '') + '" data-act="modal-set" data-m="' + m[0] + '">' + esc(m[1]) + '</button>'; }).join('') + '</div>' +
+    var cur = modalSel(), many = Array.isArray(cur);
+    var hint = cur === 'off' ? 'Borrow chords from parallel modes on the same home note for extra colour. Pick one mode or several.' :
+      cur === 'auto' ? 'Tries every mode and shows the three that fit your chords best.' :
+      cur.length === 1 ? G.MODES[cur[0]].short + ' Tap more modes to combine them.' :
+      cur.length + ' modes: each gets its own option, plus one that mixes them all.';
+    var isOn = function (m) { return many ? cur.indexOf(m) >= 0 : cur === m; };
+    return '<div class="card modal-pick"><div class="card-h"><b>Modal colour</b>' + (cur !== 'off' ? '<span class="aside"><i class="mc"></i> ' + (many ? cur.length + ' on' : 'on') + '</span>' : '') + '</div>' +
+      '<div class="hscroll">' + MODAL_CHOICES.map(function (m) { return '<button class="root sm' + (isOn(m[0]) ? ' on' : '') + '" data-act="modal-set" data-m="' + m[0] + '" aria-pressed="' + isOn(m[0]) + '">' + esc(m[1]) + '</button>'; }).join('') + '</div>' +
       '<p class="hint">' + pText(hint) + '</p></div>';
   }
   function resultsHTML(res) {
@@ -615,14 +625,20 @@
       var b = builder(); if (b.length < 2) return;
       var btn = $('[data-act="create"]'); if (btn) { btn.textContent = 'Creating…'; btn.disabled = true; }
       setTimeout(function () {
-        var r = G.create(b, { modal: Store.get('modal', 'off') }); createFilter = 'all';
+        var r = G.create(b, { modal: modalSel() }); createFilter = 'all';
         Store.set('results', { key: r.key, options: r.options, modalNote: r.modalNote }); haptic('success'); rerender();
         var first = $('.keybox'); if (first) { var pg = $('.page'); pg.scrollTo({ top: first.offsetTop - 60, behavior: 'smooth' }); }
       }, 30);
     },
     cfilter: function (el) { createFilter = el.dataset.f; rerender(); },
     'modal-set': function (el) {
-      var m = el.dataset.m; Store.set('modal', m); haptic('selection');
+      var m = el.dataset.m, cur = modalSel();
+      if (m !== 'off' && m !== 'auto') { // modes toggle on and off and can be combined
+        var a = Array.isArray(cur) ? cur.slice() : [], i = a.indexOf(m);
+        if (i >= 0) a.splice(i, 1); else a.push(m);
+        m = a.length ? a : 'off';
+      }
+      Store.set('modal', m); haptic('selection');
       var b = builder(), res = Store.get('results', null);
       if (res && b.length >= 2) { // refresh existing results with the new colour
         var r = G.create(b, { modal: m });
