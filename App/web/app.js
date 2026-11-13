@@ -372,16 +372,30 @@
       '<div class="opt col"><span>Chord types</span><div class="seg small">' + [['simple', 'Simple'], ['sevenths', 'With 7ths'], ['any', 'Anything']].map(function (m) { return '<button class="' + (dice.mode === m[0] ? 'on' : '') + '" data-act="dice-mode" data-m="' + m[0] + '">' + m[1] + '</button>'; }).join('') + '</div></div>' +
       '<label class="opt"><span>Keep them in one key</span><input type="checkbox" class="sw" data-act="dice-key"' + (dice.sameKey ? ' checked' : '') + '></label></details></div>';
     if (b.length) h += '<div class="row gap">' + playBtn(regList('bld', b, { loop: setting('loop') }), '▶ Play as is', '') + '</div>';
+    h += modalPickHTML();
     h += '<button class="btn primary wide xl" data-act="create"' + (b.length < 2 ? ' disabled' : '') + '>✦ Create progression</button>';
     if (b.length < 2) h += '<p class="hint c">Add at least 2 chords.</p>';
     var res = Store.get('results', null);
     if (res && res.options) h += resultsHTML(res);
     return { title: 'Create', html: h };
   };
+  var MODAL_CHOICES = [['off', 'Off'], ['auto', 'Auto']].concat(G.MODE_ORDER.map(function (m) { return [m, G.MODES[m].name.replace(/ \(.*\)$/, '')]; }));
+  function modalPickHTML() {
+    var cur = Store.get('modal', 'off');
+    var hint = cur === 'off' ? 'Borrow chords from a parallel mode on the same home note for extra colour.' :
+      cur === 'auto' ? 'Tries every mode and shows the three that fit your chords best.' : G.MODES[cur].short;
+    return '<div class="card modal-pick"><div class="card-h"><b>Modal colour</b>' + (cur !== 'off' ? '<span class="aside"><i class="mc"></i> on</span>' : '') + '</div>' +
+      '<div class="hscroll">' + MODAL_CHOICES.map(function (m) { return '<button class="root sm' + (cur === m[0] ? ' on' : '') + '" data-act="modal-set" data-m="' + m[0] + '">' + esc(m[1]) + '</button>'; }).join('') + '</div>' +
+      '<p class="hint">' + pText(hint) + '</p></div>';
+  }
   function resultsHTML(res) {
     var k = res.key;
     var h = '<div class="keybox"><div><div class="cap">Best-fitting key</div><b>' + pText(k.name) + '</b></div><div class="aside">' + k.fit + ' of ' + k.total + ' chords belong to it' + (k.fit < k.total ? '; the others are borrowed or chromatic colours' : '') + '</div></div>';
-    h += '<div class="seg small">' + [['all', 'All'], ['mine', 'Only my chords'], ['added', 'With connectors']].map(function (f) { return '<button class="' + (createFilter === f[0] ? 'on' : '') + '" data-act="cfilter" data-f="' + f[0] + '">' + f[1] + '</button>'; }).join('') + '</div>';
+    if (res.modalNote) h += '<p class="hint modal-note"><i class="mc"></i> ' + pText(res.modalNote) + '</p>';
+    var filters = [['all', 'All'], ['mine', 'Only my chords'], ['added', 'With connectors']];
+    if (res.options.some(function (o) { return o.kind === 'modal'; })) filters = [['all', 'All'], ['mine', 'Only mine'], ['added', 'Connectors'], ['modal', 'Modal']];
+    else if (createFilter === 'modal') createFilter = 'all';
+    h += '<div class="seg small">' + filters.map(function (f) { return '<button class="' + (createFilter === f[0] ? 'on' : '') + '" data-act="cfilter" data-f="' + f[0] + '">' + f[1] + '</button>'; }).join('') + '</div>';
     h += '<div class="opt-play"><label class="opt"><span>Loop playback</span><input type="checkbox" class="sw" data-act="set-bool" data-k="loop"' + (setting('loop') ? ' checked' : '') + '></label>' +
       '<label class="opt"><span>Use suggested tempo</span><input type="checkbox" class="sw" data-act="set-bool" data-k="useSuggestedTempo"' + (setting('useSuggestedTempo') ? ' checked' : '') + '></label></div>';
     res.options.forEach(function (o, oi) {
@@ -389,14 +403,14 @@
       var chords = o.chords.map(function (c) { return mk(c.pc, c.q, c.name); });
       var id = regList('opt' + oi, chords, { loop: setting('loop'), bpm: setting('useSuggestedTempo') ? o.bpm : setting('bpm') });
       h += '<div class="card opt-card"><div class="card-h"><b>' + esc(o.title) + '</b><span class="stars" aria-label="Flow ' + o.stars + ' of 5">' + '★★★★★'.slice(0, o.stars) + '<i>' + '★★★★★'.slice(o.stars) + '</i></span></div>' +
-        '<div class="kind ' + o.kind + '">' + (o.kind === 'mine' ? 'Only your chords' : '+' + o.added + ' connecting chord' + (o.added > 1 ? 's' : '')) + ' · ' + o.bpm + ' bpm suggested</div>' +
-        '<div class="chips wrap" data-seq="' + id + '">' + o.chords.map(function (c, k) { return chip(mk(c.pc, c.q, c.name), { i: k, roman: c.roman, cls: c.added ? 'added' : '', pre: c.added ? '<em>+</em>' : '' }); }).join('') + '</div>' +
+        '<div class="kind ' + o.kind + '">' + (o.kind === 'mine' ? 'Only your chords' : o.kind === 'modal' ? '<i class="mc"></i> ' + o.modal + ' chord' + (o.modal > 1 ? 's' : '') + ' borrowed from ' + esc(o.modeName) : '+' + o.added + ' connecting chord' + (o.added > 1 ? 's' : '')) + ' · ' + o.bpm + ' bpm suggested</div>' +
+        '<div class="chips wrap" data-seq="' + id + '">' + o.chords.map(function (c, k) { return chip(mk(c.pc, c.q, c.name), { i: k, roman: c.roman, cls: c.added ? 'added' : c.modal ? 'modal' : '', pre: c.added ? '<em>+</em>' : c.modal ? '<i class="mc"></i>' : '' }); }).join('') + '</div>' +
         '<div class="tags">' + o.mood.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>' +
         '<p class="mood">' + pText(o.blurb) + ' ' + pText(o.mood.text) + '</p>' +
         (o.mood.genres.length ? '<p class="aside">Good for: ' + esc(o.mood.genres.join(', ')) + '</p>' : '') +
         '<details class="why-d"><summary>Why it works — step by step</summary>' + o.transitions.map(function (t) {
           return '<div class="tr"><span class="tr-c">' + pText(t.from) + ' → ' + pText(t.to) + (t.loopBack ? ' <i>(loop)</i>' : '') + '</span>' + (t.tier <= 4 ? tierBadge(t.tier) : '<span class="badge t5">Unusual</span>') +
-            '<div class="why">' + pText(t.why) + '</div>' + (t.connector ? '<div class="why add">Added: ' + pText(t.connector) + '</div>' : '') + '</div>';
+            '<div class="why">' + pText(t.why) + '</div>' + (t.connector ? '<div class="why add">Added: ' + pText(t.connector) + '</div>' : '') + (t.borrowed ? '<div class="why borrow"><i class="mc"></i> ' + pText(t.borrowed.charAt(0).toUpperCase() + t.borrowed.slice(1)) + '</div>' : '') + '</div>';
         }).join('') + '</details>' +
         '<div class="row gap">' + playBtn(id) + '<button class="btn" data-act="save-opt" data-o="' + oi + '">☆ Save</button><button class="btn" data-act="use-opt" data-o="' + oi + '">Edit</button></div></div>';
     });
@@ -601,12 +615,22 @@
       var b = builder(); if (b.length < 2) return;
       var btn = $('[data-act="create"]'); if (btn) { btn.textContent = 'Creating…'; btn.disabled = true; }
       setTimeout(function () {
-        var r = G.create(b); createFilter = 'all';
-        Store.set('results', { key: r.key, options: r.options }); haptic('success'); rerender();
+        var r = G.create(b, { modal: Store.get('modal', 'off') }); createFilter = 'all';
+        Store.set('results', { key: r.key, options: r.options, modalNote: r.modalNote }); haptic('success'); rerender();
         var first = $('.keybox'); if (first) { var pg = $('.page'); pg.scrollTo({ top: first.offsetTop - 60, behavior: 'smooth' }); }
       }, 30);
     },
     cfilter: function (el) { createFilter = el.dataset.f; rerender(); },
+    'modal-set': function (el) {
+      var m = el.dataset.m; Store.set('modal', m); haptic('selection');
+      var b = builder(), res = Store.get('results', null);
+      if (res && b.length >= 2) { // refresh existing results with the new colour
+        var r = G.create(b, { modal: m });
+        Store.set('results', { key: r.key, options: r.options, modalNote: r.modalNote });
+        createFilter = m !== 'off' && r.options.some(function (o) { return o.kind === 'modal'; }) ? 'modal' : 'all';
+      }
+      rerender();
+    },
     'save-opt': function (el) {
       var res = Store.get('results', null); if (!res) return; var o = res.options[+el.dataset.o];
       saveProg(o.title + ' · ' + o.key, o.chords.map(function (c) { return mk(c.pc, c.q, c.name); }), o.key, o.mood.tags, o.bpm);

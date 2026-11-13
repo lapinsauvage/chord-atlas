@@ -132,7 +132,7 @@ window.CONTENT = (function () {
   var HOWTO = [
     ['Find a chord', 'Open Chords, pick a root and a type (or type a name like F#m7b5). Tap Play to hear it, Open for everything about it.'],
     ['See what goes well', 'On a chord page, "Next" ranks the chords that sound good after it. Colours show how common each move is: green core, blue common, purple colour, pink exotic. Tap ▶ on a row to hear the change.'],
-    ['Build from random chords', 'Open Create, add chords (or roll the dice), then tap Create progression. You get several orderings of your chords plus versions with connecting chords (marked with +), each with its feeling explained.'],
+    ['Build from random chords', 'Open Create, add chords (or roll the dice), then tap Create progression. You get several orderings of your chords plus versions with connecting chords (marked with +), each with its feeling explained. Turn on Modal colour to also get versions that borrow chords from a parallel mode (Dorian, Lydian, Mixolydian…), outlined in purple.'],
     ['Famous progressions', 'Progressions lists 34 classic progressions in any key, with their mood. Tap ▶ to listen or Open in Create to experiment.'],
     ['Keys & scales', 'Pick a key and scale to see all its chords, their functions and typical progressions.'],
     ['Save things', 'Star chords and save progressions; find them under Saved.'],

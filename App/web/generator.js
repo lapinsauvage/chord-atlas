@@ -268,7 +268,7 @@
     for (var i = 0; i < seq.length - 1; i++) t.push(tr(seq[i], seq[i + 1]));
     if (loop && seq.length > 2) { var x = tr(seq[seq.length - 1], seq[0]); x.loopBack = true; t.push(x); }
     return t;
-    function tr(a, b) { var r = trans(a, b); return { from: a.sym, to: b.sym, score: r.score, tier: r.tier, why: r.why, added: !!(a.added || b.added), connector: b.added ? b.addedWhy : null }; }
+    function tr(a, b) { var r = trans(a, b); return { from: a.sym, to: b.sym, score: r.score, tier: r.tier, why: r.why, added: !!(a.added || b.added), connector: b.added ? b.addedWhy : null, borrowed: b.modal ? b.modalWhy : null }; }
   }
   function option(id, title, blurb, seq, key, loop, kind) {
     var m = moodOf(seq, key, loop);
@@ -277,7 +277,7 @@
       id: id, title: title, blurb: blurb, kind: kind, added: added, loop: loop, key: key.name,
       chords: seq.map(function (c) {
         var r = roleIn(c, key);
-        return { pc: c.pc, q: c.q, name: c.name, sym: c.sym, added: !!c.added, addedWhy: c.addedWhy || null, roman: r.roman, diatonic: r.diatonic };
+        return { pc: c.pc, q: c.q, name: c.name, sym: c.sym, added: !!c.added, addedWhy: c.addedWhy || null, modal: !!c.modal, modalWhy: c.modalWhy || null, roman: r.roman, diatonic: r.diatonic };
       }),
       transitions: describeTransitions(seq, loop), mood: m, stars: stars(seq, loop), bpm: m.bpm
     };
@@ -378,8 +378,145 @@
       push(option('resolve', 'Resolves home', 'Your smoothest loop, finished with a cadence that lands on ' + homeChord.sym + '.', endSeq.concat(cadAdd), key, false, 'added'));
     }
 
+    // ---- modal colour: borrow chords from a parallel mode on the same tonic ----
+    var modalNote = null;
+    var modal = opts.modal && opts.modal !== 'off' ? opts.modal : null;
+    if (modal) {
+      var wanted = modal === 'auto' ? MODE_ORDER : [modal];
+      var homeMode = key.sys === 'minor' ? 'aeolian' : 'ionian';
+      var modalOpts = [];
+      wanted.forEach(function (m) {
+        if (!MODES[m] || m === homeMode) return;
+        var cands = modalColour(bestLoop.seq.length ? rotateToTonic(bestLoop.seq, key) : chords, key, m);
+        if (cands.length) modalOpts.push(cands);
+      });
+      // pick one recolouring per mode, skipping any that repeat another option (several modes can share a borrowed chord)
+      var taken = {}; options.forEach(function (o) { taken[seqKey(o.chords)] = 1; });
+      modalOpts = modalOpts.map(function (cands) {
+        var pickC = cands.filter(function (c) { return !taken[seqKey(c.seq)]; })[0];
+        if (pickC) taken[seqKey(pickC.seq)] = 1;
+        return pickC;
+      }).filter(Boolean);
+      if (modal === 'auto') modalOpts.sort(function (a, b) { return b.s - a.s; });
+      modalOpts.slice(0, modal === 'auto' ? 3 : 1).forEach(function (mo) {
+        var info = MODES[mo.mode], keyNm = key.tonicName + ' ' + info.name;
+        var o = option('modal-' + mo.mode, 'Modal colour: ' + info.name,
+          (mo.swaps ? 'Your best loop with ' + (mo.count > 1 ? mo.count + ' chords' : 'one chord') + ' swapped for ' + (mo.count > 1 ? 'their' : 'its') + ' ' + keyNm + ' version' + (mo.count > 1 ? 's' : '') + '.' :
+            'Your best loop with a chord borrowed from ' + keyNm + ' slipped in.') + ' Borrowed chords are outlined in purple.', mo.seq, key, true, 'modal');
+        o.modal = mo.count; o.modeName = keyNm;
+        o.mood.tags = [info.tag].concat(o.mood.tags.filter(function (t) { return t !== info.tag; })).slice(0, 5);
+        o.mood.text = ((key.sys === 'minor' ? info.textMinor : info.textMajor) || info.text) + ' ' + o.mood.text;
+        info.genres.forEach(function (g) { if (o.mood.genres.indexOf(g) < 0) o.mood.genres.unshift(g); });
+        o.mood.genres = o.mood.genres.slice(0, 4);
+        push(o);
+      });
+      if (modal === homeMode) modalNote = 'Your chords already sit in ' + key.name + ' (' + MODES[modal].name + '), so there is nothing to borrow from it. Try another mode or Auto.';
+      else if (!modalOpts.length) modalNote = 'No ' + (modal === 'auto' ? 'modal' : MODES[modal].name) + ' colour fits these chords naturally.';
+    }
+
     options.forEach(function (o, i) { o.rank = i; });
-    return { key: key, level: level, options: options };
+    return { key: key, level: level, options: options, modalNote: modalNote };
+  }
+
+  /* ---------------- modal colour ---------------- */
+  // Parallel modes to borrow from (same tonic as the detected key). Ionian = major, Aeolian = natural minor.
+  var MODES = {
+    ionian: { short: 'Minor keys: major IV, ii and vi. Hopeful.', name: 'Ionian (major)', scale: 'major', tag: 'hopeful', genres: ['gospel', 'classical'],
+      text: 'Borrowing from the parallel major lets light into a minor key — a major IV or a minor ii sounds like the sun breaking through.' },
+    dorian: { short: 'Minor keys: major IV. Major keys: bIII. Soulful.', name: 'Dorian', scale: 'dorian', tag: 'soulful', genres: ['funk', 'soul'],
+      textMajor: 'Dorian\'s flat 3rd and flat 7th darken a major key while keeping its groove — the bIII and bVII sound soulful and funky.',
+      text: 'Dorian\'s raised 6th gives minor harmony a hopeful, soulful lift — the major IV under a minor tonic heard in funk, Santana and Pink Floyd.' },
+    phrygian: { short: 'bII, the chord a semitone above home. Dark, Spanish.', name: 'Phrygian', scale: 'phrygian', tag: 'dark', genres: ['flamenco', 'metal'],
+      text: 'Phrygian\'s flat 2nd adds a dark, Spanish edge — the chord a semitone above home leans on the tonic like a sigh.' },
+    lydian: { short: 'Major II (raised 4th). Dreamy, floating.', name: 'Lydian', scale: 'lydian', tag: 'dreamy', genres: ['film score', 'dream pop'],
+      text: 'Lydian\'s raised 4th makes things float — the major II chord gives that wide-eyed, magical film-score shimmer.' },
+    mixolydian: { short: 'Major keys: bVII and minor v. Minor keys: major IV. Laid-back rock.', name: 'Mixolydian', scale: 'mixolydian', tag: 'laid-back', genres: ['rock', 'folk'],
+      textMinor: 'Mixolydian\'s major 3rd and 6th lift a minor key — the major IV and minor vi give it a relaxed folk-rock brightness.',
+      text: 'Mixolydian\'s flat 7th loosens the pull home — the bVII and minor v give a relaxed, classic-rock and folk swagger.' },
+    aeolian: { short: 'Major keys: iv, bVI, bVII. Nostalgic.', name: 'Aeolian (natural minor)', scale: 'natural', tag: 'nostalgic', genres: ['ballad', 'rock'],
+      text: 'Borrowing from the parallel natural minor casts shadows over a major key — iv, bVI, bVII and bIII sound nostalgic and bittersweet.' }
+  };
+  var MODE_ORDER = ['aeolian', 'dorian', 'mixolydian', 'lydian', 'phrygian', 'ionian'];
+
+  function homeScale(key) { return E.SCALES[key.sys === 'minor' ? 'natural' : 'major']; }
+  // notes the mode has that the home scale does not: its "colour"
+  function colourNotes(key, m) {
+    var ms = E.SCALES[MODES[m].scale], hs = homeScale(key);
+    return ms.filter(function (o) { return hs.indexOf(o) < 0; }).map(function (o) { return mod(key.tonic + o); });
+  }
+  // the chord built on scale step k of mode m, at the given size, or null
+  function modeChord(key, m, k, lvl) {
+    var ms = E.SCALES[MODES[m].scale], off = ms[k];
+    var q = E.stackQuality(ms, off, lvl);
+    if (!q || !Q[q]) return null;
+    return mk(key.tonic + off, q, E.relName(key.tonicName, off, k + 1, q));
+  }
+  function hasColour(c, colours) { return allPcs(c).some(function (p) { return colours.indexOf(p) >= 0; }); }
+
+  // the one note that best defines each mode against the home key: [in a major key, in a minor key]
+  var SIGNATURE = { ionian: [null, 4], dorian: [3, 9], phrygian: [1, 1], lydian: [6, 6], mixolydian: [10, 9], aeolian: [8, null] };
+  var DEG_NAME = { 1: ['b2', 2], 2: ['2', 2], 3: ['b3', 3], 4: ['3', 3], 6: ['#4', 4], 8: ['b6', 6], 9: ['6', 6], 10: ['b7', 7], 11: ['7', 7] };
+
+  // Candidate recolourings of `base` using mode m, best first: swaps (same root, the mode's own quality), then an inserted chord.
+  function modalColour(base, key, m) {
+    var ms = E.SCALES[MODES[m].scale], colours = colourNotes(key, m), info = MODES[m];
+    if (!colours.length || base.length < 2) return [];
+    var sigOff = SIGNATURE[m][key.sys === 'minor' ? 1 : 0], sig = sigOff === null ? null : mod(key.tonic + sigOff);
+    var keyNm = key.tonicName + ' ' + info.name, out = [];
+    function hasSig(c) { return sig !== null && allPcs(c).indexOf(sig) >= 0; }
+    function usable(x) { return x && cls(x.q) !== 'd' && cls(x.q) !== 'A' && hasColour(x, colours) && !fitsKey(x, key.tonic, key.ks); }
+    function mark(c, from) {
+      var why = 'borrowed from ' + keyNm + (from ? ' in place of ' + from.sym : '') + ' — its ' + colourLabel(c, key, colours, sig) + ' is the mode\'s colour note';
+      return Object.assign({}, c, { modal: true, modalWhy: why });
+    }
+    var loopFlow = function (s) { return flow(s, true); };
+
+    // 1. swaps; the first must carry the signature note if any swap can
+    var seq = base.slice(), count = 0, maxSwaps = base.length >= 4 ? 2 : 1;
+    while (count < maxSwaps) {
+      var cands = [];
+      seq.forEach(function (c, i) {
+        if (c.modal || c.pc === key.tonic || /[PS]/.test(cls(c.q))) return;
+        var k = ms.indexOf(mod(c.pc - key.tonic)); if (k < 0) return;
+        var x = modeChord(key, m, k, Math.min(1, Q[c.q].lvl || 0));
+        if (!usable(x) || same(x, c) || seq.some(function (o) { return same(o, x); })) return;
+        var trial = seq.slice(); trial[i] = mark(x, c);
+        cands.push({ s: loopFlow(trial), seq: trial, sig: hasSig(x) });
+      });
+      if (count === 0 && cands.some(function (c) { return c.sig; })) cands = cands.filter(function (c) { return c.sig; });
+      var best = cands.sort(function (a, b) { return b.s - a.s; })[0];
+      if (!best || (count > 0 && best.s < loopFlow(seq) - 2)) break; // a second swap only if it doesn't hurt the flow much
+      seq = best.seq; count++;
+    }
+    if (count) out.push({ mode: m, seq: seq, count: count, swaps: true, sig: seq.some(function (c) { return c.modal && hasSig(c); }), s: loopFlow(seq) / seq.length + 0.5 });
+
+    // 2. slip in a borrowed chord (signature-note chords first) where it connects best
+    var lvl = base.some(function (c) { return Q[c.q].lvl >= 1; }) ? 1 : 0, ins = [];
+    for (var k = 1; k < 7; k++) {
+      var x = modeChord(key, m, k, lvl);
+      if (usable(x) && !base.some(function (o) { return same(o, x); })) ins.push(x);
+    }
+    if (ins.some(hasSig)) ins = ins.filter(hasSig);
+    var bestIns = null;
+    ins.forEach(function (x) {
+      for (var i = 1; i <= base.length; i++) {
+        var a = base[i - 1], b = base[i % base.length];
+        var s1 = trans(a, x).score, s2 = trans(x, b).score, s = Math.min(s1, s2) * 1.4 + s1 + s2;
+        if (!bestIns || s > bestIns.s) bestIns = { s: s, x: x, i: i };
+      }
+    });
+    if (bestIns) {
+      var withIns = base.slice(0, bestIns.i).concat([mark(bestIns.x)], base.slice(bestIns.i));
+      var insOpt = { mode: m, seq: withIns, count: 1, swaps: false, sig: hasSig(bestIns.x), s: loopFlow(withIns) / withIns.length };
+      // a swap that misses the mode's signature note is less telling than an inserted chord that has it
+      if (out.length && !out[0].sig && insOpt.sig) out.unshift(insOpt); else out.push(insOpt);
+    }
+    return out;
+  }
+  function colourLabel(c, key, colours, sig) {
+    var pcs = allPcs(c), p = sig !== null && pcs.indexOf(sig) >= 0 ? sig : pcs.filter(function (x) { return colours.indexOf(x) >= 0; })[0];
+    var off = mod(p - key.tonic), d = DEG_NAME[off] || ['', 1];
+    return d[0] + ' (' + E.relName(key.tonicName, off, d[1], 'maj') + ')';
   }
 
   // Random chords (not necessarily related). mode: 'simple' | 'sevenths' | 'any'
@@ -408,5 +545,5 @@
     return out;
   }
 
-  return { create: create, random: random, transition: trans, detectKey: detectKey, mood: moodOf, cls: cls, mk: mk, analysis: an };
+  return { create: create, random: random, MODES: MODES, MODE_ORDER: MODE_ORDER, transition: trans, detectKey: detectKey, mood: moodOf, cls: cls, mk: mk, analysis: an };
 });
