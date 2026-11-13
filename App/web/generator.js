@@ -292,11 +292,20 @@
     var options = [], seen = {};
     function push(o) { var k = seqKey(o.chords); if (seen[k]) return; seen[k] = 1; options.push(o); }
 
+    // locks: a chord of yours that must start / end the progression
+    var cfg = fullCfg(chords, opts), lockS = cfg.start, lockE = cfg.end;
+    function lockOk(seq) { return (!lockS || same(seq[0], lockS)) && (!lockE || same(seq[seq.length - 1], lockE)); }
+    function home(seq) { return lockS || lockE ? seq : rotateToTonic(seq, key); }
+
+    // full-length progressions first: they answer the Length setting directly
+    fullOptions(chords, key, level, cfg).forEach(push);
+
     var n = chords.length;
     var perms = n <= 8 ? permutations(n) : [chords.map(function (_, i) { return i; })];
     var bestLoop = null, bestCad = null, bestVL = null, bestArc = null;
     perms.forEach(function (p) {
       var seq = p.map(function (i) { return chords[i]; });
+      if (!lockOk(seq)) return;
       var f = flow(seq, true), fo = flow(seq, false), c = cadence(seq, key), v = vlCost(seq, true);
       var sLoop = f + (isTonic(seq[0], key) ? 1.5 : 0);
       if (!bestLoop || sLoop > bestLoop.s) bestLoop = { s: sLoop, seq: seq };
@@ -314,12 +323,12 @@
     push(option('asis', 'Your order', 'Exactly as you picked them, with notes on how each change sounds.', chords, key, true, 'mine'));
     // 2. smoothest loop
     push(option('loop', 'Smoothest loop', 'Your chords reordered so every change is as natural as possible, and the last chord flows back to the first.',
-      rotateToTonic(bestLoop.seq, key), key, true, 'mine'));
+      home(bestLoop.seq), key, true, 'mine'));
     // 3. strong ending
     push(option('cadence', 'Strong ending', 'Ordered to start and finish on the home chord with the strongest possible approach to the final chord.', bestCad.seq, key, false, 'mine'));
     // 4. voice leading
     push(option('voice', 'Smoothest voice leading', 'Ordered so the fewest notes have to move between chords — great for fingerpicking and singing over.',
-      rotateToTonic(bestVL.seq, key), key, true, 'mine'));
+      home(bestVL.seq), key, true, 'mine'));
     // 5. arc
     if (n >= 3) push(option('arc', 'Tension & release', 'Starts calm, builds towards the most tense chord, then releases at the end.', bestArc.seq, key, false, 'mine'));
     // 6. tonic return: only-mine but ending back on the tonic by repeating it
@@ -348,7 +357,7 @@
       }
       return { seq: out, added: added };
     }
-    var sm = smoothWith(bestLoop.seq.length ? rotateToTonic(bestLoop.seq, key) : chords, true, Math.max(2, Math.ceil(n / 2) + 1));
+    var sm = smoothWith(bestLoop.seq.length ? home(bestLoop.seq) : chords, true, Math.max(2, Math.ceil(n / 2) + 1));
     if (sm.added) push(option('bridged', 'Smoothed with connecting chords', 'Your best loop, with a connecting chord added only where a jump sounded rough. Added chords are marked.', sm.seq, key, true, 'added'));
     var sm2 = smoothWith(chords, false, Math.max(2, Math.ceil(n / 2) + 1));
     if (sm2.added) push(option('bridged-asis', 'Your order, bridged', 'Keeps your order and slips a connecting chord into each rough change.', sm2.seq, key, false, 'added'));
@@ -381,12 +390,10 @@
     // ---- modal colour: borrow chords from parallel modes on the same tonic ----
     // opts.modal: 'off' | 'auto' | a mode id | an array of mode ids (one option per mode, plus one mixing them all)
     var modalNote = null;
-    var modal = opts.modal, isAuto = modal === 'auto';
-    var picked = isAuto ? MODE_ORDER.slice() : (Array.isArray(modal) ? modal : modal && modal !== 'off' ? [modal] : [])
-      .filter(function (m, i, a) { return MODES[m] && a.indexOf(m) === i; });
+    var isAuto = opts.modal === 'auto', picked = modeList(opts.modal);
     if (picked.length) {
       var homeMode = key.sys === 'minor' ? 'aeolian' : 'ionian';
-      var modalBase = bestLoop.seq.length ? rotateToTonic(bestLoop.seq, key) : chords;
+      var modalBase = bestLoop.seq.length ? home(bestLoop.seq) : chords;
       var usableModes = picked.filter(function (m) { return m !== homeMode; });
       var modalOpts = [];
       usableModes.forEach(function (m) {
@@ -439,8 +446,11 @@
       return o;
     }
 
+    // honour locks (your own order is always shown as is)
+    if (lockS || lockE) options = options.filter(function (o) { return o.id === 'asis' || lockOk(o.chords); });
+    var lengthNote = cfg.length && cfg.length <= n ? 'You already have ' + n + ' chords, so the ' + cfg.length + '-chord length adds nothing. Pick a longer length or remove chords.' : null;
     options.forEach(function (o, i) { o.rank = i; });
-    return { key: key, level: level, options: options, modalNote: modalNote };
+    return { key: key, level: level, options: options, modalNote: modalNote, lengthNote: lengthNote };
   }
 
   /* ---------------- modal colour ---------------- */
@@ -546,6 +556,187 @@
     return d[0] + ' (' + E.relName(key.tonicName, off, d[1], 'maj') + ')';
   }
 
+  /* ---------------- full-length progressions (Length setting) ---------------- */
+  function modeList(modal) {
+    if (modal === 'auto') return MODE_ORDER.slice();
+    return (Array.isArray(modal) ? modal : modal && modal !== 'off' ? [modal] : []).filter(function (m, i, a) { return MODES[m] && a.indexOf(m) === i; });
+  }
+  function lockChord(chords, x) { return x ? chords.filter(function (c) { return same(c, x); })[0] || null : null; }
+  // opts: { length: 0|4|6|8, keepOrder, modal, start, end }  (start/end: {pc, q} of one of your chords)
+  function fullCfg(chords, opts) {
+    var start = lockChord(chords, opts.start), end = lockChord(chords, opts.end);
+    if (start && end && start === end) end = null;
+    return { length: +opts.length || 0, keepOrder: !!opts.keepOrder, modes: modeList(opts.modal), start: start, end: end };
+  }
+  function seeded(seed) {
+    return function () { seed = seed + 0x6D2B79F5 | 0; var t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  }
+  function hashStr(str) { var h = 2166136261; for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h; }
+
+  // Chords a progression in `key` may use: the key's own chords plus each selected mode's borrowed chords.
+  function palette(key, level, modes) {
+    var hs = homeScale(key), out = [], lvl = Math.min(1, level), homeMode = key.sys === 'minor' ? 'aeolian' : 'ionian';
+    function add(c, extra) { if (!out.some(function (p) { return same(p.c, c); })) out.push(Object.assign({ c: c }, extra)); }
+    for (var k = 0; k < 7; k++) {
+      var off = hs[k], q = E.stackQuality(hs, off, lvl);
+      if (q && Q[q] && cls(q) !== 'd') add(mk(key.tonic + off, q, E.relName(key.tonicName, off, k + 1, q)), { mode: null });
+    }
+    if (key.sys === 'minor') { var vq = lvl ? '7' : 'maj'; add(mk(key.tonic + 7, vq, E.relName(key.tonicName, 7, 5, vq)), { mode: null }); } // harmonic-minor V
+    (modes || []).forEach(function (m) {
+      if (!MODES[m] || m === homeMode) return;
+      var colours = colourNotes(key, m), sigOff = SIGNATURE[m][key.sys === 'minor' ? 1 : 0], sig = sigOff === null ? null : mod(key.tonic + sigOff);
+      for (var j = 1; j < 7; j++) {
+        var x = modeChord(key, m, j, lvl);
+        if (!x || cls(x.q) === 'd' || cls(x.q) === 'A' || !hasColour(x, colours) || fitsKey(x, key.tonic, key.ks)) continue;
+        add(x, { mode: m, sig: sig !== null && allPcs(x).indexOf(sig) >= 0,
+          why: 'borrowed from ' + key.tonicName + ' ' + MODES[m].name + ' — its ' + colourLabel(x, key, colours, sig) + ' is the mode\'s colour note' });
+      }
+    });
+    return out;
+  }
+
+  var FULL_VARIANTS = {
+    home: { title: 'Full progression: lands home', blurb: 'Built around your chords in two halves: the first ends open, the second comes home to the tonic.' },
+    loop: { title: 'Full progression: loop', blurb: 'Built around your chords so the last chord flows straight back into the first, made to repeat.' },
+    modal: { title: 'Full progression: modal colour', blurb: 'Built around your chords, leaning on chords borrowed from your modal colours.' },
+    key: { title: 'Full progression: in key', blurb: 'Built around your chords with only chords from the key, to compare with the modal versions.' }
+  };
+
+  function fullScore(seq, key, cfg, variant) {
+    var L = seq.length, s = flow(seq, false) / (L - 1) * 4;
+    if (variant === 'loop') { s += trans(seq[L - 1], seq[0]).score * 0.5; if (isTonic(seq[L - 1], key)) s -= 4; }
+    else s += cadence(seq, key) * 0.6;
+    if (isTonic(seq[0], key)) s += 1.5;
+    if (L >= 6) { // halfway point: an open, "question" chord
+      var mc = seq[Math.floor(L / 2) - 1];
+      if (isDominantOf(mc, key)) s += 2; else if (mod(mc.pc - key.tonic) === 5) s += 1; else if (isTonic(mc, key)) s -= 1.5;
+    }
+    var uses = {}, adj = 0;
+    seq.forEach(function (c, i) { uses[c.sym] = (uses[c.sym] || 0) + 1; if (i && same(c, seq[i - 1])) adj++; });
+    Object.keys(uses).forEach(function (k) { if (uses[k] > 2) s -= 3 * (uses[k] - 2); });
+    s += Object.keys(uses).length * 0.4 - adj * 5;
+    var modalC = seq.filter(function (c) { return c.modal; }), used = {};
+    modalC.forEach(function (c) { used[c.modalMode] = 1; });
+    var mu = Object.keys(used).length, mc2 = modalC.length;
+    if (variant === 'modal') s += mu * 3 + mc2 - Math.max(0, mc2 - Math.ceil(L / 2)) * 3;
+    else if (cfg.modes.length) s += mu * 1.5 - Math.max(0, mc2 - Math.ceil(L / 3)) * 2;
+    return s;
+  }
+
+  // Random-but-guided fills: your chords are placed (locks first), then each free slot is drawn from the palette,
+  // weighted by how naturally it follows the previous chord and leads into the next fixed one. Best scores first.
+  function fullCandidates(user, key, level, cfg, variant, rng, tries) {
+    var L = cfg.length, pal = palette(key, level, cfg.modes);
+    if (variant === 'key') pal = pal.filter(function (p) { return !p.mode; });
+    var found = {}, out = [];
+    function fillerOf(p) {
+      return p.mode ? Object.assign({}, p.c, { modal: true, modalWhy: p.why, modalMode: p.mode }) :
+        Object.assign({}, p.c, { added: true, addedWhy: 'from ' + key.name + ' (' + E.romanFor(mod(p.c.pc - key.tonic), p.c.q) + '), filling out the progression' });
+    }
+    for (var t = 0; t < tries; t++) {
+      var seq = new Array(L), fixed = new Array(L), free = [], rest = user.slice(), i;
+      for (i = 0; i < L; i++) free.push(i);
+      var put = function (c, pos) { seq[pos] = c; fixed[pos] = true; free.splice(free.indexOf(pos), 1); rest.splice(rest.indexOf(c), 1); };
+      if (cfg.start) put(cfg.start, 0);
+      if (cfg.end) put(cfg.end, L - 1);
+      var slots = free.slice();
+      for (i = slots.length - 1; i > 0; i--) { var j = Math.floor(rng() * (i + 1)), tmp = slots[i]; slots[i] = slots[j]; slots[j] = tmp; }
+      slots = slots.slice(0, rest.length);
+      if (cfg.keepOrder) slots.sort(function (a, b) { return a - b; });
+      else for (i = rest.length - 1; i > 0; i--) { var k = Math.floor(rng() * (i + 1)), tc = rest[i]; rest[i] = rest[k]; rest[k] = tc; }
+      rest.slice().forEach(function (c, idx) { put(c, slots[idx]); });
+      for (i = 0; i < L; i++) {
+        if (fixed[i]) continue;
+        var prev = seq[i - 1], next = fixed[i + 1] ? seq[i + 1] : null, tot = 0;
+        var ws = pal.map(function (p) {
+          var w = 1, c = p.c;
+          if (prev) { w *= Math.exp(trans(prev, c).score / 2.2); if (same(prev, c)) w *= 0.02; }
+          if (next) { w *= Math.exp(trans(c, next).score / 2.2); if (same(next, c)) w *= 0.02; }
+          var u = 0; for (var q = 0; q < L; q++) if (seq[q] && same(seq[q], c)) u++;
+          w *= Math.pow(0.35, u);
+          if (p.mode) w *= variant === 'modal' ? 2.5 : 0.9;
+          if (i === 0 && isTonic(c, key)) w *= 8;
+          if (i === L - 1) {
+            if (variant === 'loop') { w *= isTonic(c, key) ? 0.2 : 1; if (seq[0]) w *= Math.exp(trans(c, seq[0]).score / 3); }
+            else if (isTonic(c, key)) w *= 10;
+          }
+          tot += w; return w;
+        });
+        var r = rng() * tot, pick = pal[pal.length - 1];
+        for (var x = 0; x < pal.length; x++) { r -= ws[x]; if (r <= 0) { pick = pal[x]; break; } }
+        seq[i] = fillerOf(pick);
+      }
+      var sk = seqKey(seq);
+      if (found[sk]) continue;
+      found[sk] = 1;
+      out.push({ seq: seq, s: fullScore(seq, key, cfg, variant) });
+    }
+    return out.sort(function (a, b) { return b.s - a.s; });
+  }
+  function fullVariants(key, level, cfg) {
+    var v = ['home', 'loop'];
+    if (cfg.modes.length && palette(key, level, cfg.modes).some(function (p) { return p.mode; })) v.push('modal', 'key');
+    return v;
+  }
+  function fullOption(seq, key, variant, cfg) {
+    var info = FULL_VARIANTS[variant], title = info.title, blurb = info.blurb;
+    if (variant !== 'loop' && cfg.end && !isTonic(cfg.end, key)) { // a locked last chord overrides "landing home"
+      title = variant === 'home' ? 'Full progression: two halves' : title;
+      blurb = blurb.replace(/,? the second comes home to the tonic\./, ', the second heads for ' + cfg.end.sym + ', your locked last chord.');
+    }
+    var o = option('full-' + variant, title, blurb + ' Chords marked + come from the key; purple ones are borrowed from your modal colours.', seq, key, variant === 'loop', 'full');
+    var modes = [];
+    seq.forEach(function (c) { if (c.modal && modes.indexOf(c.modalMode) < 0) modes.push(c.modalMode); });
+    o.regen = variant; o.length = seq.length;
+    o.modal = seq.filter(function (c) { return c.modal; }).length;
+    o.filled = o.added + o.modal;
+    o.modeName = modes.length ? key.tonicName + ' ' + modes.map(function (m) { return MODES[m].name.replace(/ \(.*\)$/, ''); }).join(' + ') : null;
+    if (modes.length) {
+      var tags = modes.map(function (m) { return MODES[m].tag; });
+      o.mood.tags = tags.concat(o.mood.tags.filter(function (t) { return tags.indexOf(t) < 0; })).slice(0, 5);
+      if (modes.length <= 2) o.mood.text = modes.map(function (m) { var i2 = MODES[m]; return (key.sys === 'minor' ? i2.textMinor : i2.textMajor) || i2.text; }).join(' ') + ' ' + o.mood.text;
+    }
+    return o;
+  }
+  function fullOptions(chords, key, level, cfg) {
+    if (!cfg.length || cfg.length <= chords.length) return [];
+    var taken = {}, out = [], base = hashStr(chords.map(function (c) { return c.sym; }).join(' ') + '|' + cfg.length + '|' + cfg.modes.join(',') + '|' + cfg.keepOrder);
+    fullVariants(key, level, cfg).forEach(function (variant) {
+      var best = fullCandidates(chords, key, level, cfg, variant, seeded(base + hashStr(variant)), 700)
+        .filter(function (c) { return !taken[seqKey(c.seq)]; })[0];
+      if (!best) return;
+      taken[seqKey(best.seq)] = 1;
+      out.push(fullOption(best.seq, key, variant, cfg));
+    });
+    return out;
+  }
+  // "Another one like this": a fresh fill for the same variant, different from the current one.
+  function reroll(input, opts, variant, currentSyms) {
+    var chords = input.map(function (c) { return mk(c.pc, c.q, c.name); });
+    var key = detectKey(chords), level = chords.some(function (c) { return Q[c.q].lvl >= 1; }) ? 1 : 0, cfg = fullCfg(chords, opts || {});
+    if (!FULL_VARIANTS[variant] || !cfg.length || cfg.length <= chords.length) return null;
+    var cands = fullCandidates(chords, key, level, cfg, variant, Math.random, 700).filter(function (c) { return seqKey(c.seq) !== currentSyms; }).slice(0, 6);
+    if (!cands.length) return null;
+    var w = cands.map(function (c, i) { return 6 - i; }), tot = w.reduce(function (a, b) { return a + b; }, 0), r = Math.random() * tot, pick = cands[0];
+    for (var i = 0; i < cands.length; i++) { r -= w[i]; if (r <= 0) { pick = cands[i]; break; } }
+    return fullOption(pick.seq, key, variant, cfg);
+  }
+  // Every chord each selected mode lends to the key of `input` (for the "borrowable chords" list).
+  function borrowable(input, modal) {
+    var chords = input.map(function (c) { return mk(c.pc, c.q, c.name); });
+    var modes = modeList(modal);
+    if (!chords.length || !modes.length) return null;
+    var key = detectKey(chords), level = chords.some(function (c) { return Q[c.q].lvl >= 1; }) ? 1 : 0, homeMode = key.sys === 'minor' ? 'aeolian' : 'ionian';
+    return {
+      key: key.name, home: homeMode,
+      modes: modes.filter(function (m) { return m !== homeMode; }).map(function (m) {
+        return { mode: m, name: MODES[m].name, chords: palette(key, level, [m]).filter(function (p) { return p.mode; }).map(function (p) {
+          return { pc: p.c.pc, q: p.c.q, name: p.c.name, sym: p.c.sym, sig: p.sig, roman: E.romanFor(mod(p.c.pc - key.tonic), p.c.q) };
+        }) };
+      }).filter(function (x) { return x.chords.length; })
+    };
+  }
+
   // Random chords (not necessarily related). mode: 'simple' | 'sevenths' | 'any'
   var POOLS = {
     simple: ['maj', 'maj', 'm', 'm', 'maj', 'm', 'sus4', 'sus2'],
@@ -572,5 +763,5 @@
     return out;
   }
 
-  return { create: create, random: random, MODES: MODES, MODE_ORDER: MODE_ORDER, transition: trans, detectKey: detectKey, mood: moodOf, cls: cls, mk: mk, analysis: an };
+  return { create: create, random: random, reroll: reroll, borrowable: borrowable, seqKey: seqKey, MODES: MODES, MODE_ORDER: MODE_ORDER, transition: trans, detectKey: detectKey, mood: moodOf, cls: cls, mk: mk, analysis: an };
 });

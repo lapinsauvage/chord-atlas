@@ -142,7 +142,9 @@
       (bi >= 0 ? '' : '<button class="btn" data-act="add" data-c="' + esc(enc(c)) + '">+ Create</button>') + '</div>';
     if (bi >= 0) {
       h += '<div class="row gap mt"><button class="btn sm" data-act="b-move" data-d="-1">← Move</button><button class="btn sm" data-act="b-move" data-d="1">Move →</button>' +
-        '<button class="btn sm danger" data-act="b-remove">Remove</button></div>';
+        '<button class="btn sm danger" data-act="b-remove">Remove</button></div>' +
+        '<div class="row gap"><button class="btn sm' + (lockOf(c) === 'start' ? ' primary' : '') + '" data-act="b-lock" data-w="start">⇤ Start here</button>' +
+        '<button class="btn sm' + (lockOf(c) === 'end' ? ' primary' : '') + '" data-act="b-lock" data-w="end">End here ⇥</button></div>';
     }
     $('#sheet-body').innerHTML = h;
     document.body.classList.add('sheet-open');
@@ -364,7 +366,7 @@
     var b = builder(), dice = Store.get('dice', { n: 4, mode: 'simple', sameKey: false });
     var h = '<p class="explain">Pick any chords — they don\'t need to fit together. Then tap <b>Create progression</b> to get several ways to play them, each with its feeling explained.</p>';
     h += '<div class="card builder"><div class="card-h"><b>Your chords</b><span class="aside">' + b.length + '/8</span></div>' +
-      '<div class="chips wrap big" data-seq="bld">' + (b.length ? b.map(function (c, i) { return chip(c, { i: i, ctx: 'b:' + i }); }).join('') : '<span class="empty">No chords yet — add some or roll the dice.</span>') + '</div>' +
+      '<div class="chips wrap big" data-seq="bld">' + (b.length ? b.map(function (c, i) { var lk = lockOf(c); return chip(c, { i: i, ctx: 'b:' + i, roman: lk, cls: lk ? 'locked' : '' }); }).join('') : '<span class="empty">No chords yet — add some or roll the dice.</span>') + '</div>' +
       '<div class="row gap"><button class="btn" data-act="nav" data-to="chords/pick">+ Add chord</button><button class="btn" data-act="dice">🎲 Random</button>' +
       (b.length ? '<button class="btn ghost" data-act="b-clear">Clear</button>' : '') + '</div>' +
       '<details class="dice-opts"' + (Store.get('diceOpen', false) ? ' open' : '') + '><summary>Random options</summary>' +
@@ -372,13 +374,74 @@
       '<div class="opt col"><span>Chord types</span><div class="seg small">' + [['simple', 'Simple'], ['sevenths', 'With 7ths'], ['any', 'Anything']].map(function (m) { return '<button class="' + (dice.mode === m[0] ? 'on' : '') + '" data-act="dice-mode" data-m="' + m[0] + '">' + m[1] + '</button>'; }).join('') + '</div></div>' +
       '<label class="opt"><span>Keep them in one key</span><input type="checkbox" class="sw" data-act="dice-key"' + (dice.sameKey ? ' checked' : '') + '></label></details></div>';
     if (b.length) h += '<div class="row gap">' + playBtn(regList('bld', b, { loop: setting('loop') }), '▶ Play as is', '') + '</div>';
-    h += modalPickHTML();
+    h += lengthPickHTML() + modalPickHTML();
     h += '<button class="btn primary wide xl" data-act="create"' + (b.length < 2 ? ' disabled' : '') + '>✦ Create progression</button>';
     if (b.length < 2) h += '<p class="hint c">Add at least 2 chords.</p>';
     var res = Store.get('results', null);
     if (res && res.options) h += resultsHTML(res);
     return { title: 'Create', html: h };
   };
+  // everything the generator needs from the Create settings
+  function createOpts() {
+    var lk = Store.get('locks', null) || {};
+    return { modal: modalSel(), length: Store.get('len', 0), keepOrder: Store.get('keepOrder', false),
+      start: lk.start ? dec(lk.start) : null, end: lk.end ? dec(lk.end) : null };
+  }
+  function runCreate() {
+    var r = G.create(builder(), createOpts());
+    Store.set('results', { key: r.key, options: r.options, modalNote: r.modalNote, lengthNote: r.lengthNote });
+    return r;
+  }
+  function refreshResults() { if (Store.get('results', null) && builder().length >= 2) runCreate(); rerender(); }
+  // 'start' / 'end' if this builder chord is locked there
+  function lockOf(c) { var lk = Store.get('locks', null) || {}; return lk.start === enc(c) ? 'start' : lk.end === enc(c) ? 'end' : ''; }
+  function clearLocks() { Store.set('locks', null); }
+
+  function lengthPickHTML() {
+    var len = Store.get('len', 0), ko = Store.get('keepOrder', false);
+    return '<div class="card len-pick"><div class="card-h"><b>Length</b><span class="aside">' + (len ? len + ' chords' : 'just your chords') + '</span></div>' +
+      '<div class="seg small">' + [[0, 'Mine'], [4, '4'], [6, '6'], [8, '8']].map(function (o) { return '<button class="' + (len === o[0] ? 'on' : '') + '" data-act="len-set" data-v="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>' +
+      (len ? '<label class="opt"><span>Keep my chords in order<small>Off: your chords can go anywhere in the progression</small></span><input type="checkbox" class="sw" data-act="keep-order"' + (ko ? ' checked' : '') + '></label>' : '') +
+      '<p class="hint">' + (len ? 'Fills the other slots with chords from the key' + (modalSel() !== 'off' ? ' and your modal colours' : '') + ', phrased in two halves. Tap one of your chords to lock it as the first or last chord.' :
+        'Pick 4, 6 or 8 to build a full progression around your chords, even from just two.') + '</p></div>';
+  }
+  function borrowHTML() {
+    var b = builder(), sel = modalSel();
+    if (sel === 'off' || !b.length) return '';
+    var bw = G.borrowable(b, sel);
+    if (!bw) return '';
+    var body = bw.modes.length ? bw.modes.map(function (m) {
+      return '<div class="bw-row"><span class="bw-name">' + esc(m.name.replace(/ \(.*\)$/, '')) + '</span><div class="chips wrap">' +
+        m.chords.map(function (c) { return chip(mk(c.pc, c.q, c.name), { roman: c.roman, cls: 'modal', pre: c.sig ? '<i class="mc"></i>' : '' }); }).join('') + '</div></div>';
+    }).join('') + '<p class="hint">Tap a chord to hear it or add it to your chords. A half-dot marks the chord carrying the mode\'s signature note.</p>' :
+      '<p class="hint">Your chords already sit in ' + pText(bw.key) + ', so the selected mode has nothing to lend.</p>';
+    return '<details class="dice-opts borrow"' + (Store.get('bwOpen', false) ? ' open' : '') + '><summary>Borrowable chords in ' + pText(bw.key) + '</summary>' + body + '</details>';
+  }
+  // plain-text chord chart, four chords per bar line, Roman numerals underneath when known
+  function chartText(title, keyName, chords, bpm) {
+    var cells = chords.map(function (c) { return c.sym; }), roms = chords.map(function (c) { return c.roman || ''; });
+    var w = Math.max.apply(null, cells.concat(roms).map(function (x) { return x.length; })) + 1;
+    var pad = function (x) { while (x.length < w) x += ' '; return x; };
+    var lines = [title + (keyName ? ' (' + keyName + (bpm ? ', ' + bpm + ' bpm' : '') + ')' : bpm ? ' (' + bpm + ' bpm)' : '')];
+    for (var i = 0; i < cells.length; i += 4) {
+      lines.push('| ' + cells.slice(i, i + 4).map(pad).join('| ') + '|');
+      if (roms.some(Boolean)) lines.push('  ' + roms.slice(i, i + 4).map(pad).join('  '));
+    }
+    lines.push('', 'Made with Chord Atlas');
+    return lines.join('\n');
+  }
+  function copyText(text) {
+    function done(ok) { toast(ok ? 'Copied as a chord chart' : 'Copying is not available here'); if (ok) haptic('success'); }
+    function legacy() { // works in older WebViews without the async clipboard API
+      var ta = document.createElement('textarea'), ok = false; ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { ok = document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta); done(ok);
+    }
+    if (native('copy', { text: text })) return done(true);
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, legacy);
+    else legacy();
+  }
   var MODAL_CHOICES = [['off', 'Off'], ['auto', 'Auto']].concat(G.MODE_ORDER.map(function (m) { return [m, G.MODES[m].name.replace(/ \(.*\)$/, '')]; }));
   // 'off' | 'auto' | [mode ids]  (older versions stored a single mode id as a string)
   function modalSel() {
@@ -396,15 +459,17 @@
     var isOn = function (m) { return many ? cur.indexOf(m) >= 0 : cur === m; };
     return '<div class="card modal-pick"><div class="card-h"><b>Modal colour</b>' + (cur !== 'off' ? '<span class="aside"><i class="mc"></i> ' + (many ? cur.length + ' on' : 'on') + '</span>' : '') + '</div>' +
       '<div class="hscroll">' + MODAL_CHOICES.map(function (m) { return '<button class="root sm' + (isOn(m[0]) ? ' on' : '') + '" data-act="modal-set" data-m="' + m[0] + '" aria-pressed="' + isOn(m[0]) + '">' + esc(m[1]) + '</button>'; }).join('') + '</div>' +
-      '<p class="hint">' + pText(hint) + '</p></div>';
+      '<p class="hint">' + pText(hint) + '</p>' + borrowHTML() + '</div>';
   }
   function resultsHTML(res) {
     var k = res.key;
     var h = '<div class="keybox"><div><div class="cap">Best-fitting key</div><b>' + pText(k.name) + '</b></div><div class="aside">' + k.fit + ' of ' + k.total + ' chords belong to it' + (k.fit < k.total ? '; the others are borrowed or chromatic colours' : '') + '</div></div>';
+    if (res.lengthNote) h += '<p class="hint modal-note">' + pText(res.lengthNote) + '</p>';
     if (res.modalNote) h += '<p class="hint modal-note"><i class="mc"></i> ' + pText(res.modalNote) + '</p>';
+    var has = function (k) { return res.options.some(function (o) { return o.kind === k; }); };
     var filters = [['all', 'All'], ['mine', 'Only my chords'], ['added', 'With connectors']];
-    if (res.options.some(function (o) { return o.kind === 'modal'; })) filters = [['all', 'All'], ['mine', 'Only mine'], ['added', 'Connectors'], ['modal', 'Modal']];
-    else if (createFilter === 'modal') createFilter = 'all';
+    if (has('full') || has('modal')) filters = [['all', 'All']].concat(has('full') ? [['full', 'Full']] : [], [['mine', has('full') && has('modal') ? 'Mine' : 'Only mine'], ['added', has('full') && has('modal') ? 'Bridged' : 'Connectors']], has('modal') ? [['modal', 'Modal']] : []);
+    if (!filters.some(function (f) { return f[0] === createFilter; })) createFilter = 'all';
     h += '<div class="seg small">' + filters.map(function (f) { return '<button class="' + (createFilter === f[0] ? 'on' : '') + '" data-act="cfilter" data-f="' + f[0] + '">' + f[1] + '</button>'; }).join('') + '</div>';
     h += '<div class="opt-play"><label class="opt"><span>Loop playback</span><input type="checkbox" class="sw" data-act="set-bool" data-k="loop"' + (setting('loop') ? ' checked' : '') + '></label>' +
       '<label class="opt"><span>Use suggested tempo</span><input type="checkbox" class="sw" data-act="set-bool" data-k="useSuggestedTempo"' + (setting('useSuggestedTempo') ? ' checked' : '') + '></label></div>';
@@ -413,7 +478,7 @@
       var chords = o.chords.map(function (c) { return mk(c.pc, c.q, c.name); });
       var id = regList('opt' + oi, chords, { loop: setting('loop'), bpm: setting('useSuggestedTempo') ? o.bpm : setting('bpm') });
       h += '<div class="card opt-card"><div class="card-h"><b>' + esc(o.title) + '</b><span class="stars" aria-label="Flow ' + o.stars + ' of 5">' + '★★★★★'.slice(0, o.stars) + '<i>' + '★★★★★'.slice(o.stars) + '</i></span></div>' +
-        '<div class="kind ' + o.kind + '">' + (o.kind === 'mine' ? 'Only your chords' : o.kind === 'modal' ? '<i class="mc"></i> ' + o.modal + ' chord' + (o.modal > 1 ? 's' : '') + ' borrowed from ' + esc(o.modeName) : '+' + o.added + ' connecting chord' + (o.added > 1 ? 's' : '')) + ' · ' + o.bpm + ' bpm suggested</div>' +
+        '<div class="kind ' + o.kind + '">' + (o.kind === 'full' ? o.length + ' chords · ' + o.filled + ' filled in' + (o.modal ? ' · <i class="mc"></i> ' + o.modal + ' from ' + esc(o.modeName) : '') : o.kind === 'mine' ? 'Only your chords' : o.kind === 'modal' ? '<i class="mc"></i> ' + o.modal + ' chord' + (o.modal > 1 ? 's' : '') + ' borrowed from ' + esc(o.modeName) : '+' + o.added + ' connecting chord' + (o.added > 1 ? 's' : '')) + ' · ' + o.bpm + ' bpm suggested</div>' +
         '<div class="chips wrap" data-seq="' + id + '">' + o.chords.map(function (c, k) { return chip(mk(c.pc, c.q, c.name), { i: k, roman: c.roman, cls: c.added ? 'added' : c.modal ? 'modal' : '', pre: c.added ? '<em>+</em>' : c.modal ? '<i class="mc"></i>' : '' }); }).join('') + '</div>' +
         '<div class="tags">' + o.mood.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>' +
         '<p class="mood">' + pText(o.blurb) + ' ' + pText(o.mood.text) + '</p>' +
@@ -422,7 +487,8 @@
           return '<div class="tr"><span class="tr-c">' + pText(t.from) + ' → ' + pText(t.to) + (t.loopBack ? ' <i>(loop)</i>' : '') + '</span>' + (t.tier <= 4 ? tierBadge(t.tier) : '<span class="badge t5">Unusual</span>') +
             '<div class="why">' + pText(t.why) + '</div>' + (t.connector ? '<div class="why add">Added: ' + pText(t.connector) + '</div>' : '') + (t.borrowed ? '<div class="why borrow"><i class="mc"></i> ' + pText(t.borrowed.charAt(0).toUpperCase() + t.borrowed.slice(1)) + '</div>' : '') + '</div>';
         }).join('') + '</details>' +
-        '<div class="row gap">' + playBtn(id) + '<button class="btn" data-act="save-opt" data-o="' + oi + '">☆ Save</button><button class="btn" data-act="use-opt" data-o="' + oi + '">Edit</button></div></div>';
+        '<div class="row gap">' + playBtn(id) + '<button class="btn" data-act="save-opt" data-o="' + oi + '">☆ Save</button><button class="btn" data-act="use-opt" data-o="' + oi + '">Edit</button></div>' +
+        '<div class="row gap">' + (o.regen ? '<button class="btn sm" data-act="another" data-o="' + oi + '">↻ Another like this</button>' : '') + '<button class="btn sm ghost" data-act="copy-opt" data-o="' + oi + '">Copy chart</button></div></div>';
     });
     return h;
   }
@@ -546,7 +612,7 @@
         (s.key ? '<div class="aside">' + pText(s.key) + '</div>' : '') +
         '<div class="chips wrap" data-seq="' + id + '">' + cs.map(function (c, k) { return chip(c, { i: k }); }).join('') + '</div>' +
         (s.tags && s.tags.length ? '<div class="tags">' + s.tags.map(function (t) { return '<span>' + esc(t) + '</span>'; }).join('') + '</div>' : '') +
-        '<div class="row gap">' + playBtn(id) + '<button class="btn" data-act="to-create" data-list="' + id + '">Edit</button><button class="btn' + (delArm === i ? ' danger' : ' ghost') + '" data-act="del-saved" data-i="' + i + '">' + (delArm === i ? 'Tap to delete' : 'Delete') + '</button></div></div>';
+        '<div class="row gap">' + playBtn(id) + '<button class="btn" data-act="to-create" data-list="' + id + '">Edit</button><button class="btn ghost" data-act="copy-saved" data-i="' + i + '">Copy</button><button class="btn' + (delArm === i ? ' danger' : ' ghost') + '" data-act="del-saved" data-i="' + i + '">' + (delArm === i ? 'Tap to delete' : 'Delete') + '</button></div></div>';
     });
     h += '<h2 class="sec">Favourite chords</h2>' + (favs.length ? '<div class="chips wrap">' + favs.map(function (c) { return chip(c); }).join('') + '</div>' : '<p class="empty">Tap ★ on a chord to keep it here.</p>');
     if (rec.length) h += '<h2 class="sec">Recently viewed</h2><div class="chips wrap">' + rec.map(function (c) { return chip(c); }).join('') + '</div>';
@@ -607,26 +673,29 @@
     'more-next': function () { showAllNext = true; rerenderChordTab(); },
     level: function (el) { setSetting('level', el.dataset.l === 'auto' ? 'auto' : +el.dataset.l); $$('[data-act="level"]').forEach(function (b) { b.classList.toggle('on', b === el); }); rerenderChordTab(); },
     tierf: function (el) { var s = Object.assign({}, setting('tiers')); var t = el.dataset.t; s[t] = !s[t]; setSetting('tiers', s); $$('[data-act="tierf"][data-t="' + t + '"]').forEach(function (b) { b.classList.toggle('on', s[t]); }); if (route().name === 'chord') rerenderChordTab(); haptic('selection'); },
-    'to-create': function (el) { var L = lists[el.dataset.list]; if (!L) return; setBuilder(L.chords.slice(0, 8)); toast('Loaded into Create'); go('create'); },
+    'to-create': function (el) { var L = lists[el.dataset.list]; if (!L) return; setBuilder(L.chords.slice(0, 8)); clearLocks(); toast('Loaded into Create'); go('create'); },
     'save-list': function (el) { var L = lists[el.dataset.list]; if (!L) return; saveProg(el.dataset.name || 'Progression', L.chords, null, [], L.o.bpm); },
     dice: function () {
-      var d = Store.get('dice', { n: 4, mode: 'simple', sameKey: false }); setBuilder(G.random(d.n, d.mode, d.sameKey)); haptic('medium'); rerender();
+      var d = Store.get('dice', { n: 4, mode: 'simple', sameKey: false }); setBuilder(G.random(d.n, d.mode, d.sameKey)); clearLocks(); haptic('medium'); rerender();
       var b = builder(); if (b.length) playList('bld', b, { bpm: 100, beats: 2 });
     },
     'dice-n': function (el) { var d = Store.get('dice', { n: 4, mode: 'simple', sameKey: false }); d.n = Math.max(2, Math.min(8, d.n + +el.dataset.d)); Store.set('dice', d); Store.set('diceOpen', true); rerender(); },
     'dice-mode': function (el) { var d = Store.get('dice', { n: 4, mode: 'simple', sameKey: false }); d.mode = el.dataset.m; Store.set('dice', d); Store.set('diceOpen', true); rerender(); },
-    'b-clear': function () { setBuilder([]); Snd.stop(); rerender(); },
+    'b-clear': function () { setBuilder([]); clearLocks(); Snd.stop(); rerender(); },
     'b-move': function (el) {
       var i = +sheetCtx.slice(2), b = builder(), j = i + +el.dataset.d; if (j < 0 || j >= b.length) return;
       var t = b[i]; b[i] = b[j]; b[j] = t; setBuilder(b); sheetCtx = 'b:' + j; closeSheet(); rerender();
     },
-    'b-remove': function () { var i = +sheetCtx.slice(2), b = builder(); b.splice(i, 1); setBuilder(b); closeSheet(); rerender(); },
+    'b-remove': function () {
+      var i = +sheetCtx.slice(2), b = builder(), gone = b.splice(i, 1)[0], lk = Store.get('locks', null);
+      if (lk && gone && !b.some(function (c) { return enc(c) === enc(gone); })) { if (lk.start === enc(gone)) lk.start = null; if (lk.end === enc(gone)) lk.end = null; Store.set('locks', lk); }
+      setBuilder(b); closeSheet(); rerender();
+    },
     create: function () {
       var b = builder(); if (b.length < 2) return;
       var btn = $('[data-act="create"]'); if (btn) { btn.textContent = 'Creating…'; btn.disabled = true; }
       setTimeout(function () {
-        var r = G.create(b, { modal: modalSel() }); createFilter = 'all';
-        Store.set('results', { key: r.key, options: r.options, modalNote: r.modalNote }); haptic('success'); rerender();
+        runCreate(); createFilter = 'all'; haptic('success'); rerender();
         var first = $('.keybox'); if (first) { var pg = $('.page'); pg.scrollTo({ top: first.offsetTop - 60, behavior: 'smooth' }); }
       }, 30);
     },
@@ -639,20 +708,44 @@
         m = a.length ? a : 'off';
       }
       Store.set('modal', m); haptic('selection');
-      var b = builder(), res = Store.get('results', null);
-      if (res && b.length >= 2) { // refresh existing results with the new colour
-        var r = G.create(b, { modal: m });
-        Store.set('results', { key: r.key, options: r.options, modalNote: r.modalNote });
+      if (Store.get('results', null) && builder().length >= 2) { // refresh existing results with the new colour
+        var r = runCreate();
         createFilter = m !== 'off' && r.options.some(function (o) { return o.kind === 'modal'; }) ? 'modal' : 'all';
       }
       rerender();
+    },
+    'len-set': function (el) { Store.set('len', +el.dataset.v); haptic('selection'); refreshResults(); },
+    'b-lock': function (el) {
+      if (!sheetChord || !sheetCtx) return;
+      var w = el.dataset.w, other = w === 'start' ? 'end' : 'start', lk = Object.assign({}, Store.get('locks', null) || {}), e = enc(sheetChord), sym = symText(sheetChord);
+      lk[w] = lk[w] === e ? null : e;
+      if (lk[other] === e && lk[w]) lk[other] = null;
+      Store.set('locks', lk); haptic('selection'); closeSheet();
+      toast(lk[w] ? sym + (w === 'start' ? ' will start' : ' will end') + ' every progression' : 'Unlocked');
+      refreshResults();
+    },
+    another: function (el) {
+      var res = Store.get('results', null); if (!res) return;
+      var oi = +el.dataset.o, o = res.options[oi]; if (!o || !o.regen) return;
+      var n = G.reroll(builder(), createOpts(), o.regen, G.seqKey(o.chords));
+      if (!n) { toast('No other version found'); return; }
+      n.rank = o.rank; res.options[oi] = n; Store.set('results', res); Snd.stop(); haptic('light'); rerender();
+      var L = lists['opt' + oi]; if (L) playList('opt' + oi, L.chords, L.o);
+    },
+    'copy-opt': function (el) {
+      var res = Store.get('results', null); if (!res) return; var o = res.options[+el.dataset.o]; if (!o) return;
+      copyText(chartText(o.title, o.key, o.chords, o.bpm));
+    },
+    'copy-saved': function (el) {
+      var sv = Store.get('saved', [])[+el.dataset.i]; if (!sv) return;
+      copyText(chartText(sv.name, null, sv.chords.map(dec), sv.bpm));
     },
     'save-opt': function (el) {
       var res = Store.get('results', null); if (!res) return; var o = res.options[+el.dataset.o];
       saveProg(o.title + ' · ' + o.key, o.chords.map(function (c) { return mk(c.pc, c.q, c.name); }), o.key, o.mood.tags, o.bpm);
       el.textContent = '★ Saved';
     },
-    'use-opt': function (el) { var res = Store.get('results', null); if (!res) return; var o = res.options[+el.dataset.o]; setBuilder(o.chords.slice(0, 8).map(function (c) { return mk(c.pc, c.q, c.name); })); if (o.chords.length > 8) toast('Only the first 8 chords fit in Create'); Snd.stop(); rerender(); $('.page').scrollTop = 0; },
+    'use-opt': function (el) { var res = Store.get('results', null); if (!res) return; var o = res.options[+el.dataset.o]; setBuilder(o.chords.slice(0, 8).map(function (c) { return mk(c.pc, c.q, c.name); })); clearLocks(); if (o.chords.length > 8) toast('Only the first 8 chords fit in Create'); Snd.stop(); rerender(); $('.page').scrollTop = 0; },
     'lib-key': function (el) { lib.t = +el.dataset.pc; Snd.stop(); rerender(); },
     'lib-f': function (el) { lib.f = el.dataset.f; rerender(); },
     'lib-l': function (el) { lib.level = +el.dataset.l; Snd.stop(); rerender(); },
@@ -685,6 +778,7 @@
   document.addEventListener('change', function (ev) {
     var el = ev.target;
     if (el.dataset.act === 'set-bool') { setSetting(el.dataset.k, el.checked); haptic('selection'); if (route().name === 'create' && Store.get('results', null)) rerender(); }
+    if (el.dataset.act === 'keep-order') { Store.set('keepOrder', el.checked); haptic('selection'); refreshResults(); return; }
     if (el.dataset.act === 'dice-key') { var d = Store.get('dice', { n: 4, mode: 'simple', sameKey: false }); d.sameKey = el.checked; Store.set('dice', d); Store.set('diceOpen', true); }
   });
   document.addEventListener('input', function (ev) {
@@ -692,7 +786,10 @@
     if (el.dataset.act === 'range') { var v = +el.value; setSetting(el.dataset.k, v); if (el.dataset.k === 'bpm') $('#bpm-v').textContent = v + ' bpm'; }
     if (el.name === 'q') { var c = fromSym(el.value), m = $('#search-msg'); if (m) m.innerHTML = !el.value ? '' : c ? 'Press Go to open <b>' + symHTML(c) + '</b>' : 'Keep typing… e.g. Am7, F#m7b5, Bbmaj9, G7#9'; }
   });
-  document.addEventListener('toggle', function (ev) { if (ev.target.classList && ev.target.classList.contains('dice-opts')) Store.set('diceOpen', ev.target.open); }, true);
+  document.addEventListener('toggle', function (ev) {
+    var cl = ev.target.classList; if (!cl || !cl.contains('dice-opts')) return;
+    Store.set(cl.contains('borrow') ? 'bwOpen' : 'diceOpen', ev.target.open);
+  }, true);
   document.addEventListener('submit', function (ev) {
     ev.preventDefault();
     var f = ev.target; if (f.dataset.form !== 'search') return;

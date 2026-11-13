@@ -133,6 +133,7 @@ window.CONTENT = (function () {
     ['Find a chord', 'Open Chords, pick a root and a type (or type a name like F#m7b5). Tap Play to hear it, Open for everything about it.'],
     ['See what goes well', 'On a chord page, "Next" ranks the chords that sound good after it. Colours show how common each move is: green core, blue common, purple colour, pink exotic. Tap ▶ on a row to hear the change.'],
     ['Build from random chords', 'Open Create, add chords (or roll the dice), then tap Create progression. You get several orderings of your chords plus versions with connecting chords (marked with +), each with its feeling explained. Turn on Modal colour to also get versions that borrow chords from parallel modes (Dorian, Lydian, Mixolydian…), outlined in purple. Pick several modes to get one option each plus a mix of them all.'],
+    ['Build a longer progression', 'In Create, set Length to 4, 6 or 8: the app builds full progressions around your chords (even just two), filling the gaps from the key and your modal colours. Tap ↻ Another like this for a new version, tap one of your chords to lock it as the first or last chord, and use Copy chart to paste a progression anywhere.'],
     ['Famous progressions', 'Progressions lists 34 classic progressions in any key, with their mood. Tap ▶ to listen or Open in Create to experiment.'],
     ['Keys & scales', 'Pick a key and scale to see all its chords, their functions and typical progressions.'],
     ['Save things', 'Star chords and save progressions; find them under Saved.'],

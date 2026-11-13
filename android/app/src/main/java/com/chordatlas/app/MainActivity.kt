@@ -2,6 +2,9 @@ package com.chordatlas.app
 
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
@@ -25,7 +28,7 @@ import org.json.JSONObject
 
 /**
  * Hosts the bundled, offline web UI (App/web, copied into assets/web) in a WebView and bridges
- * a few native features: persistent storage, haptics, opening links, system-bar colours,
+ * a few native features: persistent storage, haptics, copying text, opening links, system-bar colours,
  * safe-area insets and the Android back button.
  */
 class MainActivity : AppCompatActivity() {
@@ -181,6 +184,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 "haptic" -> runOnUiThread { haptic(msg.optString("style", "light")) }
                 "open" -> runOnUiThread { openExternal(msg.optString("url")) }
+                "copy" -> runOnUiThread {
+                    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("Chord Atlas", msg.optString("text")))
+                }
                 "theme" -> runOnUiThread { applySystemBars(msg.optBoolean("dark", isSystemDark())) }
             }
         }

@@ -283,7 +283,15 @@ input[type=range] { width: 100%; accent-color: var(--acc); height: 30px; }
 .opt-card .kind.added { color: var(--acc); }
 .opt-card .kind.modal { color: var(--t3); }
 .modal-pick .hscroll { margin: 2px -14px 0; padding-left: 14px; padding-right: 14px; }
-.modal-pick { margin-top: 12px; }
+.len-pick { margin-top: 12px; }
+.len-pick .seg { margin: 4px 0 2px; }
+.len-pick .opt { padding: 8px 0 2px; }
+.len-pick .hint { margin: 4px 0 0; }
+.borrow { margin-top: 10px; }
+.bw-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0 2px; }
+.bw-name { flex: 0 0 82px; font-size: 13.5px; font-weight: 600; color: var(--t3); padding-top: 9px; }
+.bw-row .chips { flex: 1; margin: 0; }
+.chip.locked small { color: var(--acc); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
 .modal-pick .hint { margin: 4px 0 0; }
 .modal-note { margin: 4px 4px 8px; }
 .stars { color: #ffb400; letter-spacing: 1px; font-size: 14px; }
